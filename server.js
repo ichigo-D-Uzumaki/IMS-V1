@@ -1,60 +1,106 @@
+require('dotenv').config(); // Load .env for local development
+
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const session = require('express-session');
 const nodemailer = require('nodemailer');
-const app = express();
+const { connectDB, getAppData, saveAppData } = require('./db');
 
+const app = express();
 const PORT = process.env.PORT || 3000;
+const IS_PROD = process.env.NODE_ENV === 'production';
+const USE_MONGO = !!process.env.MONGODB_URI;
+
+// Local-only paths (ignored in production with Mongo)
 const DATA_FILE = 'data.json';
 const ENV_FILE = '.env';
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
-app.use(express.static(__dirname));
+const BACKUP_DIR = path.join(__dirname, 'backups');
 
-// Ensure uploads folder exists
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+// ── Cloudinary (optional — required for file uploads on cloud) ─────────────────
+let cloudinaryV2 = null;
+const USE_CLOUDINARY = !!(
+    process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET
+);
+if (USE_CLOUDINARY) {
+    cloudinaryV2 = require('cloudinary').v2;
+    cloudinaryV2.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET,
+    });
+    console.log('✅  Cloudinary configured for file uploads.');
+}
+
+// Ensure local directories exist (skipped when running fully on cloud)
+if (!IS_PROD || !USE_MONGO) {
+    if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ENCRYPTION SETUP  (AES-256-GCM — authenticated encryption)
-//  Key source : DTVS_SECRET in .env file, auto-generated on first run
+//  Key source : DTVS_SECRET env var (required in production)
+//               Auto-generated & saved to .env in local dev
 // ─────────────────────────────────────────────────────────────────────────────
 const ALGO = 'aes-256-gcm';
 const IV_LEN = 12; // 96-bit IV recommended for GCM
 
 function loadOrCreateKey() {
-    let dataKey, sessionSecret;
-    let lines = [];
+    let dataKey = process.env.DTVS_SECRET || null;
+    let sessionSecret = process.env.SESSION_SECRET || null;
 
-    if (fs.existsSync(ENV_FILE)) {
-        lines = fs.readFileSync(ENV_FILE, 'utf8').split('\n');
+    if (!IS_PROD) {
+        // Local dev: read from .env file and auto-generate if missing
+        let lines = [];
+        if (fs.existsSync(ENV_FILE)) {
+            lines = fs.readFileSync(ENV_FILE, 'utf8').split('\n');
+        }
+        if (!dataKey) {
+            const keyLine = lines.find(l => l.startsWith('DTVS_SECRET='));
+            dataKey = keyLine ? keyLine.split('=')[1].trim() : null;
+        }
+        if (!sessionSecret) {
+            const sessionLine = lines.find(l => l.startsWith('SESSION_SECRET='));
+            sessionSecret = sessionLine ? sessionLine.split('=')[1].trim() : null;
+        }
+
+        let changed = false;
+        if (!dataKey || dataKey.length !== 64) {
+            dataKey = crypto.randomBytes(32).toString('hex');
+            changed = true;
+            console.log('✅  New data encryption key generated.');
+        }
+        if (!sessionSecret || sessionSecret.length < 64) {
+            sessionSecret = crypto.randomBytes(48).toString('hex');
+            changed = true;
+            console.log('✅  New session secret generated.');
+        }
+
+        if (changed) {
+            try {
+                const kept = lines.filter(l =>
+                    !l.startsWith('DTVS_SECRET=') && !l.startsWith('SESSION_SECRET=') && l.trim()
+                );
+                kept.push(`DTVS_SECRET=${dataKey}`, `SESSION_SECRET=${sessionSecret}`);
+                fs.writeFileSync(ENV_FILE, kept.join('\n') + '\n');
+                console.log('✅  Secrets saved to .env');
+            } catch (e) {
+                console.warn('⚠️  Could not write secrets to .env:', e.message);
+            }
+        }
     }
 
-    const keyLine = lines.find(l => l.startsWith('DTVS_SECRET='));
-    const sessionLine = lines.find(l => l.startsWith('SESSION_SECRET='));
-
-    dataKey = keyLine ? keyLine.split('=')[1].trim() : null;
-    sessionSecret = sessionLine ? sessionLine.split('=')[1].trim() : null;
-
-    let changed = false;
-
+    // Both local and production: validate secrets before starting
     if (!dataKey || dataKey.length !== 64) {
-        dataKey = crypto.randomBytes(32).toString('hex');
-        changed = true;
-        console.log('✅  New data encryption key generated.');
+        throw new Error('DTVS_SECRET must be a 64-character hex string set as an environment variable.');
     }
     if (!sessionSecret || sessionSecret.length < 64) {
-        sessionSecret = crypto.randomBytes(48).toString('hex');
-        changed = true;
-        console.log('✅  New session secret generated.');
-    }
-
-    if (changed) {
-        const kept = lines.filter(l =>
-            !l.startsWith('DTVS_SECRET=') && !l.startsWith('SESSION_SECRET=') && l.trim()
-        );
-        kept.push(`DTVS_SECRET=${dataKey}`, `SESSION_SECRET=${sessionSecret}`);
-        fs.writeFileSync(ENV_FILE, kept.join('\n') + '\n');
+        throw new Error('SESSION_SECRET must be ≥64 characters and set as an environment variable.');
     }
 
     return { dataKey: Buffer.from(dataKey, 'hex'), sessionSecret };
@@ -125,9 +171,12 @@ function verifyPassword(password, stored) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  DATA LAYER  (write-through in-memory cache — fix #1: race condition)
+//  DATA LAYER  (async — MongoDB when MONGODB_URI is set, else local data.json)
 // ─────────────────────────────────────────────────────────────────────────────
-const EMPTY_DB = () => ({ users: [], stock: [], restockHistory: [], withdrawalHistory: [], adminEmail: '', auditLog: [] });
+const EMPTY_DB = () => ({
+    users: [], stock: [], restockHistory: [], withdrawalHistory: [],
+    adminEmail: '', auditLog: [], documents: [], mailSettings: {},
+});
 
 function logAudit(data, action, performedBy, detail = '') {
     if (!data.auditLog) data.auditLog = [];
@@ -137,43 +186,54 @@ function logAudit(data, action, performedBy, detail = '') {
 
 let _dbCache = null; // in-memory cache; null = not loaded yet
 
-function getData() {
+async function getData() {
     if (_dbCache) return _dbCache; // serve from cache
-    if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify(EMPTY_DB(), null, 2));
-    const raw = JSON.parse(fs.readFileSync(DATA_FILE));
+
+    let raw;
+    if (USE_MONGO) {
+        raw = await getAppData();
+    } else {
+        if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify(EMPTY_DB(), null, 2));
+        raw = JSON.parse(fs.readFileSync(DATA_FILE));
+    }
+
     _dbCache = {
+        ...EMPTY_DB(),
         ...raw,
-        stock: (raw.stock || []).map(decryptStock),
-        restockHistory: (raw.restockHistory || []).map(decryptHistory),
-        withdrawalHistory: (raw.withdrawalHistory || []).map(decryptHistory),
+        stock:              (raw.stock              || []).map(decryptStock),
+        restockHistory:     (raw.restockHistory     || []).map(decryptHistory),
+        withdrawalHistory:  (raw.withdrawalHistory  || []).map(decryptHistory),
     };
     return _dbCache;
 }
 
-const BACKUP_DIR = path.join(__dirname, 'backups');
-if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
-
-function saveData(data) {
+async function saveData(data) {
     _dbCache = data; // update cache first
-    // Rolling backup — keep last 5 versions
-    try {
-        if (fs.existsSync(DATA_FILE)) {
-            const stamp = new Date().toISOString().replace(/[:.]/g, '_').slice(0, 19);
-            const bkp = path.join(BACKUP_DIR, `data_${stamp}.json`);
-            fs.copyFileSync(DATA_FILE, bkp);
-            const files = fs.readdirSync(BACKUP_DIR)
-                .filter(f => f.startsWith('data_') && f.endsWith('.json'))
-                .sort();
-            if (files.length > 5) files.slice(0, files.length - 5).forEach(f => fs.unlinkSync(path.join(BACKUP_DIR, f)));
-        }
-    } catch (e) { console.error('Backup error:', e.message); }
+
     const toWrite = {
         ...data,
-        stock: (data.stock || []).map(encryptStock),
-        restockHistory: (data.restockHistory || []).map(encryptHistory),
-        withdrawalHistory: (data.withdrawalHistory || []).map(encryptHistory),
+        stock:              (data.stock              || []).map(encryptStock),
+        restockHistory:     (data.restockHistory     || []).map(encryptHistory),
+        withdrawalHistory:  (data.withdrawalHistory  || []).map(encryptHistory),
     };
-    fs.writeFileSync(DATA_FILE, JSON.stringify(toWrite, null, 2));
+
+    if (USE_MONGO) {
+        await saveAppData(toWrite);
+    } else {
+        // Rolling backup — keep last 5 versions (local dev only)
+        try {
+            if (fs.existsSync(DATA_FILE)) {
+                const stamp = new Date().toISOString().replace(/[:.]/g, '_').slice(0, 19);
+                const bkp = path.join(BACKUP_DIR, `data_${stamp}.json`);
+                fs.copyFileSync(DATA_FILE, bkp);
+                const files = fs.readdirSync(BACKUP_DIR)
+                    .filter(f => f.startsWith('data_') && f.endsWith('.json'))
+                    .sort();
+                if (files.length > 5) files.slice(0, files.length - 5).forEach(f => fs.unlinkSync(path.join(BACKUP_DIR, f)));
+            }
+        } catch (e) { console.error('Backup error:', e.message); }
+        fs.writeFileSync(DATA_FILE, JSON.stringify(toWrite, null, 2));
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,7 +245,7 @@ app.use((req, res, next) => {
     if (req.path === '/api/documents/upload') return next();
     express.json({ limit: '1mb' })(req, res, next);
 });
-app.use(express.static('.'));
+app.use(express.static(__dirname));
 app.use(session({
     secret: SESSION_SECRET,
     resave: false,
@@ -194,11 +254,11 @@ app.use(session({
         httpOnly: true,
         sameSite: 'strict',
         maxAge: 8 * 60 * 60 * 1000,
-        // secure: true,  // Uncomment when served over HTTPS
+        secure: IS_PROD, // HTTPS-only cookies in production
     }
 }));
 
-const deletedUserIds = new Set(); // fix #4: active sessions of deleted users are rejected
+const deletedUserIds = new Set(); // active sessions of deleted users are rejected
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  AUTH MIDDLEWARE
@@ -207,7 +267,6 @@ function requireAuth(req, res, next) {
     if (!req.session || !req.session.user) {
         return res.status(401).json({ error: 'Authentication required' });
     }
-    // fix #4: reject sessions belonging to deleted users
     if (deletedUserIds && deletedUserIds.has(req.session.user.id)) {
         req.session.destroy(() => { });
         return res.status(401).json({ error: 'Session invalidated' });
@@ -243,32 +302,46 @@ function safeFloat(val, fallback = '') {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  NODEMAILER
+//  Priority: process.env → DB mailSettings → .env file (local dev only)
 // ─────────────────────────────────────────────────────────────────────────────
-function getMailCredentials() {
-    const envLines = fs.existsSync(ENV_FILE)
-        ? fs.readFileSync(ENV_FILE, 'utf8').split('\n') : [];
-    const get = key => {
-        const l = envLines.find(line => line.startsWith(key + '='));
-        return l ? l.split('=').slice(1).join('=').trim() : process.env[key] || '';
-    };
-    return { user: get('MAIL_USER'), pass: get('MAIL_PASS') };
+async function getMailCredentials() {
+    // 1. Environment variables (cloud dashboard or local .env via dotenv)
+    if (process.env.MAIL_USER && process.env.MAIL_PASS) {
+        return { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS };
+    }
+    // 2. DB mailSettings (saved via admin UI — works on both Mongo and local)
+    try {
+        const data = await getData();
+        const ms = data.mailSettings || {};
+        if (ms.mailUser && ms.mailPass) return { user: ms.mailUser, pass: ms.mailPass };
+    } catch (_) { /* ignore */ }
+    // 3. .env file fallback (local dev only)
+    if (!IS_PROD && fs.existsSync(ENV_FILE)) {
+        const envLines = fs.readFileSync(ENV_FILE, 'utf8').split('\n');
+        const get = key => {
+            const l = envLines.find(line => line.startsWith(key + '='));
+            return l ? l.split('=').slice(1).join('=').trim() : '';
+        };
+        return { user: get('MAIL_USER'), pass: get('MAIL_PASS') };
+    }
+    return { user: '', pass: '' };
 }
 
-function createTransporter() {
-    const { user, pass } = getMailCredentials();
+async function createTransporter() {
+    const { user, pass } = await getMailCredentials();
     if (!user || !pass) {
-        console.warn('⚠️  MAIL_USER / MAIL_PASS not set in .env — email sending disabled.');
+        console.warn('⚠️  MAIL_USER / MAIL_PASS not set — email sending disabled.');
         return null;
     }
     return nodemailer.createTransport({ service: 'gmail', auth: { user, pass } });
 }
 
 async function sendMail(subject, html) {
-    const transporter = createTransporter();
+    const transporter = await createTransporter();
     if (!transporter) return;
-    const data = getData();
+    const data = await getData();
     if (!data.adminEmail) { console.warn('No admin email configured.'); return; }
-    const { user } = getMailCredentials();
+    const { user } = await getMailCredentials();
     try {
         await transporter.sendMail({
             from: `"DTVS Champion" <${user}>`,
@@ -309,7 +382,7 @@ function resetRateLimit(ip) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // LOGIN
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
     const ip = req.ip || req.socket.remoteAddress;
     if (!checkRateLimit(ip)) {
         return res.status(429).json({ error: 'Too many login attempts. Try again in 15 minutes.' });
@@ -318,7 +391,7 @@ app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Missing credentials' });
 
-    const data = getData();
+    const data = await getData();
     const user = data.users.find(u => u.username === username);
 
     if (!user || !verifyPassword(password, user.password)) {
@@ -328,7 +401,7 @@ app.post('/api/login', (req, res) => {
     if (!user.password.startsWith('pbkdf2:')) {
         const idx = data.users.findIndex(u => u.username === username);
         data.users[idx].password = hashPassword(password);
-        saveData(data);
+        await saveData(data);
     }
 
     resetRateLimit(ip);
@@ -337,7 +410,7 @@ app.post('/api/login', (req, res) => {
         if (err) return res.status(500).json({ error: 'Session error' });
         const safeUser = { id: user.id, username: user.username, role: user.role, permissions: user.permissions };
         req.session.user = safeUser;
-        // FIX #13 — Remember Me: extend cookie to 30 days if requested
+        // Remember Me: extend cookie to 30 days if requested
         if (req.body.rememberMe) req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
         res.json({ success: true, user: safeUser });
     });
@@ -352,8 +425,8 @@ app.post('/api/logout', (req, res) => {
 app.use('/api', requireAuth);
 
 // ── Stock ──────────────────────────────────────────────────────────────────
-app.post('/api/add-item', requireAdmin, (req, res) => {
-    const data = getData();
+app.post('/api/add-item', requireAdmin, async (req, res) => {
+    const data = await getData();
     const newItem = {
         id: Date.now(),
         name: sanitizeString(req.body.name),
@@ -365,22 +438,22 @@ app.post('/api/add-item', requireAdmin, (req, res) => {
         supplierContact: sanitizeString(req.body.supplierContact),
         qtyPerMachine: sanitizeString(req.body.qtyPerMachine),
         price: safeFloat(req.body.price),
-        rack: sanitizeString(req.body.rack || '', 100),  // ← NEW: rack location
+        rack: sanitizeString(req.body.rack || '', 100),
     };
     if (!newItem.name) return res.status(400).json({ error: 'Name is required' });
     data.stock.push(newItem);
     logAudit(data, 'ADD_ITEM', req.session.user.username, `${newItem.name} (${newItem.partNumber})`);
-    saveData(data);
+    await saveData(data);
     res.json({ success: true, item: newItem });
 });
 
-// ── Bulk add items (used by XLS import — fix #2: single round-trip) ──────────
-app.post('/api/bulk-add-items', requireAdmin, (req, res) => {
+// ── Bulk add items (used by XLS import — single round-trip) ──────────────────
+app.post('/api/bulk-add-items', requireAdmin, async (req, res) => {
     const { items } = req.body;
     if (!Array.isArray(items) || items.length === 0)
         return res.status(400).json({ error: 'No items provided' });
 
-    const data = getData();
+    const data = await getData();
     const added = [], skipped = [], failed = [];
 
     for (const item of items) {
@@ -407,14 +480,13 @@ app.post('/api/bulk-add-items', requireAdmin, (req, res) => {
         });
         added.push(item.partNumber || item.name);
     }
-    saveData(data);
+    await saveData(data);
     res.json({ success: true, added: added.length, skipped: skipped.length, failed: failed.length });
 });
 
-// FIX #2 — Bulk add items (single server round-trip for XLS import)
-app.post('/api/update-stock', (req, res) => {
+app.post('/api/update-stock', async (req, res) => {
     const { id, amount, type, details } = req.body;
-    const data = getData();
+    const data = await getData();
     const item = data.stock.find(s => s.id == id);
     if (!item) return res.status(404).json({ error: 'Item not found' });
 
@@ -463,11 +535,11 @@ app.post('/api/update-stock', (req, res) => {
         return res.status(400).json({ error: 'Invalid type' });
     }
 
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
 });
 
-app.post('/api/send-pr', (req, res) => {
+app.post('/api/send-pr', async (req, res) => {
     const { items } = req.body;
     if (!Array.isArray(items) || items.length === 0)
         return res.status(400).json({ error: 'No items provided' });
@@ -481,22 +553,27 @@ app.post('/api/send-pr', (req, res) => {
             <td>${safeFloat(item.price, 0)}</td>
         </tr>`).join('');
 
-    sendMail(
-        `📝 Bulk PR Request - ${items.length} Items`,
-        `<h3>Manual Purchase Request</h3>
-         <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;">
-             <thead style="background-color:#333;color:#fff;">
-                 <tr><th>#</th><th>Name</th><th>Part Number</th><th>Qty</th><th>Price</th></tr>
-             </thead>
-             <tbody>${tableRows}</tbody>
-         </table>`
-    ).then(() => res.json({ success: true }))
-        .catch(err => { console.error(err); res.status(500).json({ error: 'Mail error' }); });
+    try {
+        await sendMail(
+            `📝 Bulk PR Request - ${items.length} Items`,
+            `<h3>Manual Purchase Request</h3>
+             <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;">
+                 <thead style="background-color:#333;color:#fff;">
+                     <tr><th>#</th><th>Name</th><th>Part Number</th><th>Qty</th><th>Price</th></tr>
+                 </thead>
+                 <tbody>${tableRows}</tbody>
+             </table>`
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Mail error' });
+    }
 });
 
-app.post('/api/edit-item', requireAdmin, (req, res) => {
+app.post('/api/edit-item', requireAdmin, async (req, res) => {
     const { id, updatedItem } = req.body;
-    const data = getData();
+    const data = await getData();
     const index = data.stock.findIndex(s => s.id == id);
     if (index === -1) return res.status(404).json({ error: 'Item not found' });
     data.stock[index] = {
@@ -507,41 +584,41 @@ app.post('/api/edit-item', requireAdmin, (req, res) => {
         qtyPerMachine: sanitizeString(String(updatedItem.qtyPerMachine ?? '')),
         criticalLimit: safeInt(updatedItem.criticalLimit),
         price: safeFloat(updatedItem.price),
-        rack: sanitizeString(updatedItem.rack || '', 100),  // ← NEW: rack location
+        rack: sanitizeString(updatedItem.rack || '', 100),
     };
     logAudit(data, 'EDIT_ITEM', req.session.user.username, `id=${id}`);
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
 });
 
-// ── NEW: Inline rack update endpoint (used by Update & BOM tabs) ──────────────
-app.post('/api/update-rack', requireAuth, (req, res) => {
+// ── Inline rack update endpoint (used by Update & BOM tabs) ──────────────────
+app.post('/api/update-rack', requireAuth, async (req, res) => {
     const { id, rack } = req.body;
-    const data = getData();
+    const data = await getData();
     const index = data.stock.findIndex(s => s.id == id);
     if (index === -1) return res.status(404).json({ error: 'Item not found' });
     data.stock[index].rack = sanitizeString(rack || '', 100);
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
 });
 
-app.post('/api/delete-item', requireAdmin, (req, res) => {
-    const data = getData();
+app.post('/api/delete-item', requireAdmin, async (req, res) => {
+    const data = await getData();
     const before = data.stock.length;
     const toDelete = data.stock.find(s => s.id == req.body.id);
     data.stock = data.stock.filter(s => s.id != req.body.id);
     if (data.stock.length === before) return res.status(404).json({ error: 'Item not found' });
     logAudit(data, 'DELETE_ITEM', req.session.user.username, toDelete ? `${toDelete.name}` : `id=${req.body.id}`);
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
 });
 
 // ── Users ──────────────────────────────────────────────────────────────────
-app.post('/api/create-user', requireAdmin, (req, res) => {
+app.post('/api/create-user', requireAdmin, async (req, res) => {
     const { username, password, permissions } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
 
-    const data = getData();
+    const data = await getData();
     if (data.users.find(u => u.username === username))
         return res.status(409).json({ error: 'Username already exists' });
 
@@ -553,19 +630,19 @@ app.post('/api/create-user', requireAdmin, (req, res) => {
         permissions: permissions || {},
     });
     logAudit(data, 'CREATE_USER', req.session.user.username, sanitizeString(username, 100));
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
 });
 
-// ── Change password (fix #3) ──────────────────────────────────────────────────
-app.post('/api/change-password', requireAuth, (req, res) => {
+// ── Change password ───────────────────────────────────────────────────────────
+app.post('/api/change-password', requireAuth, async (req, res) => {
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword)
         return res.status(400).json({ error: 'Both current and new password required' });
     if (newPassword.length < 6)
         return res.status(400).json({ error: 'New password must be at least 6 characters' });
 
-    const data = getData();
+    const data = await getData();
     const idx = data.users.findIndex(u => u.id === req.session.user.id);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
 
@@ -573,77 +650,76 @@ app.post('/api/change-password', requireAuth, (req, res) => {
         return res.status(401).json({ error: 'Current password is incorrect' });
 
     data.users[idx].password = hashPassword(newPassword);
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
 });
 
-// FIX #3 — Users can change their own password
-app.post('/api/delete-user', requireAdmin, (req, res) => {
-    const data = getData();
+app.post('/api/delete-user', requireAdmin, async (req, res) => {
+    const data = await getData();
     const target = data.users.find(u => u.id === req.body.id);
     if (!target) return res.status(404).json({ error: 'User not found' });
     if (target.role === 'superadmin') return res.status(403).json({ error: 'Cannot delete superadmin' });
     deletedUserIds.add(req.body.id);
     logAudit(data, 'DELETE_USER', req.session.user.username, target.username);
     data.users = data.users.filter(u => u.id !== req.body.id);
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
 });
 
 // ── Settings ───────────────────────────────────────────────────────────────
-app.post('/api/save-settings', requireAdmin, (req, res) => {
+app.post('/api/save-settings', requireAdmin, async (req, res) => {
     const email = sanitizeString(req.body.email || '', 200);
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
         return res.status(400).json({ error: 'Invalid email address' });
-    const data = getData();
+    const data = await getData();
     data.adminEmail = email;
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
 });
 
-app.post('/api/clear-data', requireAdmin, (req, res) => {
+app.post('/api/clear-data', requireAdmin, async (req, res) => {
     const { target } = req.body;
-    const data = getData();
+    const data = await getData();
     if (target === 'history') { data.restockHistory = []; data.withdrawalHistory = []; }
     else if (target === 'registry') { data.stock = []; }
     else return res.status(400).json({ error: 'Invalid target' });
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
 });
 
 // ── Data reads ─────────────────────────────────────────────────────────────
-app.get('/api/all', (req, res) => {
-    const data = getData();
+app.get('/api/all', async (req, res) => {
+    const data = await getData();
     res.json({
         ...data,
         users: data.users.map(({ password: _, ...safe }) => safe),
     });
 });
 
-app.get('/api/users', (req, res) => {
-    const users = getData().users.map(({ password: _, ...safe }) => safe);
+app.get('/api/users', async (req, res) => {
+    const users = (await getData()).users.map(({ password: _, ...safe }) => safe);
     res.json(users);
 });
 
-app.get('/api/audit-log', requireAdmin, (req, res) => {
-    res.json((getData().auditLog || []).slice().reverse());
+app.get('/api/audit-log', requireAdmin, async (req, res) => {
+    res.json(((await getData()).auditLog || []).slice().reverse());
 });
 
-app.post('/api/update-permissions', requireAdmin, (req, res) => {
+app.post('/api/update-permissions', requireAdmin, async (req, res) => {
     const { id, permissions } = req.body;
-    const data = getData();
+    const data = await getData();
     const idx = data.users.findIndex(u => u.id === id);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
     if (data.users[idx].role === 'superadmin') return res.status(403).json({ error: 'Cannot modify superadmin' });
     data.users[idx].permissions = permissions;
     logAudit(data, 'EDIT_PERMISSIONS', req.session.user.username, data.users[idx].username);
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
 });
 
-app.post('/api/set-quantity', requireAdmin, (req, res) => {
+app.post('/api/set-quantity', requireAdmin, async (req, res) => {
     const { id, quantity, reason } = req.body;
-    const data = getData();
+    const data = await getData();
     const idx = data.stock.findIndex(s => s.id == id);
     if (idx === -1) return res.status(404).json({ error: 'Item not found' });
     const oldQty = data.stock[idx].quantity;
@@ -662,21 +738,39 @@ app.post('/api/set-quantity', requireAdmin, (req, res) => {
     if (diff >= 0) data.restockHistory.push(histEntry);
     else data.withdrawalHistory.push(histEntry);
     logAudit(data, 'SET_QUANTITY', req.session.user.username, `${data.stock[idx].name}: ${oldQty} → ${newQty}`);
-    saveData(data);
+    await saveData(data);
     res.json({ success: true });
 });
 
-app.post('/api/save-mail-settings', requireAdmin, (req, res) => {
+app.post('/api/save-mail-settings', requireAdmin, async (req, res) => {
     const mailUser = sanitizeString(req.body.mailUser || '', 200);
     const mailPass = req.body.mailPass || '';
     if (!mailUser) return res.status(400).json({ error: 'Email required' });
-    const envLines = require('fs').existsSync(ENV_FILE)
-        ? require('fs').readFileSync(ENV_FILE, 'utf8').split('\n').filter(l => l.trim()) : [];
-    const kept = envLines.filter(l => !l.startsWith('MAIL_USER=') && !l.startsWith('MAIL_PASS='));
-    kept.push(`MAIL_USER=${mailUser}`);
-    if (mailPass) kept.push(`MAIL_PASS=${mailPass}`);
-    require('fs').writeFileSync(ENV_FILE, kept.join('\n') + '\n');
-    logAudit(getData(), 'SAVE_MAIL', req.session.user.username, mailUser);
+
+    const data = await getData();
+
+    if (USE_MONGO) {
+        // Cloud: persist mail credentials in the database
+        if (!data.mailSettings) data.mailSettings = {};
+        data.mailSettings.mailUser = mailUser;
+        if (mailPass) data.mailSettings.mailPass = mailPass;
+        logAudit(data, 'SAVE_MAIL', req.session.user.username, mailUser);
+        await saveData(data);
+    } else {
+        // Local dev: write to .env file
+        try {
+            const envLines = fs.existsSync(ENV_FILE)
+                ? fs.readFileSync(ENV_FILE, 'utf8').split('\n').filter(l => l.trim()) : [];
+            const kept = envLines.filter(l => !l.startsWith('MAIL_USER=') && !l.startsWith('MAIL_PASS='));
+            kept.push(`MAIL_USER=${mailUser}`);
+            if (mailPass) kept.push(`MAIL_PASS=${mailPass}`);
+            fs.writeFileSync(ENV_FILE, kept.join('\n') + '\n');
+        } catch (e) {
+            return res.status(500).json({ error: 'Could not save mail settings: ' + e.message });
+        }
+        logAudit(data, 'SAVE_MAIL', req.session.user.username, mailUser);
+        await saveData(data);
+    }
     res.json({ success: true });
 });
 
@@ -796,18 +890,25 @@ function splitMultipart(body, boundary) {
     return { files, fields };
 }
 
-function getDocs() {
-    const data = getData();
+async function getDocs() {
+    const data = await getData();
     return data.documents || [];
 }
 
-function saveDocs(docs) {
-    const data = getData();
+async function saveDocs(docs) {
+    const data = await getData();
     data.documents = docs;
-    saveData(data);
+    await saveData(data);
 }
 
 app.post('/api/documents/upload', requireAuth, requireAdmin, async (req, res) => {
+    // Cloud without Cloudinary configured → reject gracefully
+    if (IS_PROD && !USE_CLOUDINARY) {
+        return res.status(503).json({
+            error: 'File uploads require Cloudinary configuration. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET environment variables.'
+        });
+    }
+
     let parsed;
     try {
         parsed = await parseMultipart(req);
@@ -819,7 +920,7 @@ app.post('/api/documents/upload', requireAuth, requireAdmin, async (req, res) =>
         return res.status(400).json({ error: 'No files received.' });
     }
 
-    const docs = getDocs();
+    const docs = await getDocs();
     const saved = [];
     const errors = [];
 
@@ -841,37 +942,78 @@ app.post('/api/documents/upload', requireAuth, requireAdmin, async (req, res) =>
         }
 
         const canonicalMime = EXT_TO_MIME[extRaw] || 'application/octet-stream';
-        const storedName = `${Date.now()}_${crypto.randomBytes(8).toString('hex')}.${extRaw}`;
-        const filePath = path.join(UPLOADS_DIR, storedName);
+        let meta;
 
-        fs.writeFileSync(filePath, file.data); // Buffer written directly — binary-safe
+        if (USE_CLOUDINARY) {
+            // ── Upload buffer to Cloudinary ────────────────────────────────
+            try {
+                const uploadResult = await new Promise((resolve, reject) => {
+                    const stream = cloudinaryV2.uploader.upload_stream(
+                        {
+                            resource_type: 'raw',
+                            public_id: `ims-uploads/${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+                            use_filename: false,
+                        },
+                        (error, result) => error ? reject(error) : resolve(result)
+                    );
+                    stream.end(file.data);
+                });
 
-        const meta = {
-            id: Date.now() + Math.random(),
-            originalName: file.originalName,
-            storedName,
-            size: file.data.length,
-            mimeType: canonicalMime,
-            uploadedBy: req.session.user.username,
-            uploadedAt: new Date().toISOString(),
-            category: sanitizeString(parsed.fields.category || '', 50),
-        };
+                meta = {
+                    id: Date.now() + Math.random(),
+                    originalName: file.originalName,
+                    storedName: uploadResult.public_id,
+                    cloudinaryUrl: uploadResult.secure_url,
+                    size: file.data.length,
+                    mimeType: canonicalMime,
+                    uploadedBy: req.session.user.username,
+                    uploadedAt: new Date().toISOString(),
+                    category: sanitizeString(parsed.fields.category || '', 50),
+                };
+            } catch (e) {
+                errors.push(`${file.originalName}: Cloudinary upload failed — ${e.message}`);
+                continue;
+            }
+        } else {
+            // ── Save to local disk (dev only) ──────────────────────────────
+            const storedName = `${Date.now()}_${crypto.randomBytes(8).toString('hex')}.${extRaw}`;
+            const filePath = path.join(UPLOADS_DIR, storedName);
+            fs.writeFileSync(filePath, file.data); // Buffer written directly — binary-safe
+
+            meta = {
+                id: Date.now() + Math.random(),
+                originalName: file.originalName,
+                storedName,
+                size: file.data.length,
+                mimeType: canonicalMime,
+                uploadedBy: req.session.user.username,
+                uploadedAt: new Date().toISOString(),
+                category: sanitizeString(parsed.fields.category || '', 50),
+            };
+        }
+
         docs.push(meta);
         saved.push(meta);
     }
 
-    saveDocs(docs);
+    await saveDocs(docs);
     res.json({ success: true, saved, errors });
 });
 
-app.get('/api/documents', requireAuth, (req, res) => {
-    res.json(getDocs());
+app.get('/api/documents', requireAuth, async (req, res) => {
+    res.json(await getDocs());
 });
 
-app.get('/api/documents/:id', requireAuth, (req, res) => {
-    const doc = getDocs().find(d => String(d.id) === req.params.id);
+app.get('/api/documents/:id', requireAuth, async (req, res) => {
+    const doc = (await getDocs()).find(d => String(d.id) === req.params.id);
     if (!doc) return res.status(404).json({ error: 'Document not found' });
 
+    // Cloudinary-hosted file: redirect to the CDN URL
+    if (doc.cloudinaryUrl) {
+        return res.redirect(302, doc.cloudinaryUrl);
+    }
+
+    // Local file
     const filePath = path.join(UPLOADS_DIR, doc.storedName);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing on disk' });
 
@@ -880,18 +1022,41 @@ app.get('/api/documents/:id', requireAuth, (req, res) => {
     fs.createReadStream(filePath).pipe(res);
 });
 
-app.delete('/api/documents/:id', requireAuth, requireAdmin, (req, res) => {
-    const docs = getDocs();
+app.delete('/api/documents/:id', requireAuth, requireAdmin, async (req, res) => {
+    const docs = await getDocs();
     const index = docs.findIndex(d => String(d.id) === req.params.id);
     if (index === -1) return res.status(404).json({ error: 'Document not found' });
 
     const [doc] = docs.splice(index, 1);
-    const filePath = path.join(UPLOADS_DIR, doc.storedName);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
-    saveDocs(docs);
+    if (doc.cloudinaryUrl && USE_CLOUDINARY) {
+        // Remove from Cloudinary
+        try {
+            await cloudinaryV2.uploader.destroy(doc.storedName, { resource_type: 'raw' });
+        } catch (e) {
+            console.error('Cloudinary delete error:', e.message);
+        }
+    } else if (doc.storedName && !doc.cloudinaryUrl) {
+        // Remove from local disk
+        const filePath = path.join(UPLOADS_DIR, doc.storedName);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+
+    await saveDocs(docs);
     res.json({ success: true });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
+//  START SERVER
+// ─────────────────────────────────────────────────────────────────────────────
+async function start() {
+    if (USE_MONGO) {
+        await connectDB();
+    }
+    app.listen(PORT, () => console.log(`✅ Server running at http://localhost:${PORT}`));
+}
+
+start().catch(err => {
+    console.error('❌ Startup failed:', err.message);
+    process.exit(1);
+});

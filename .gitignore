@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Local secrets — never commit these
+.env
+
+# Local data & uploads — stored in MongoDB/Cloudinary on cloud
+data.json
+uploads/
+backups/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.log
