@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "nodemailer": "^8.0.5"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}

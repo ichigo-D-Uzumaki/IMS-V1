@@ -1,0 +1,52 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "admin",
+      "password": "pbkdf2:117ae9c5aaed07ecfe50f4038285ed4947a210e82847eafcb0890b4aacede948:aacd9939dffbd5859fe630f9c8e5b95a295cceb7f1eb67a7660680a832778d773f2af2ec8f55cf3afdb60949649e49c21b4704a3002d329844da15c636752efb",
+      "role": "superadmin",
+      "permissions": {
+        "canAdd": true,
+        "canUpdate": true,
+        "canViewHistory": true
+      }
+    }
+  ],
+  "adminEmail": "dtvschampion2000@gmail.com",
+  "stock": [
+    {
+      "id": 1772648494328,
+      "name": "3627a10fae88b3e9c6431b25:a6c23aa719a67f984d46ff0c55dd8e74:e28762",
+      "partNumber": "da0de0db9d80e850b6365a80:75f717fe3ab3d531d64222dfb62af82b:fbe169dcad",
+      "quantity": 1,
+      "criticalLimit": 10,
+      "category": "aac7fe24989b125946ee42f0:990713e943a2ffd989d86c2e1d7dd68b:8db6767ab8b97e",
+      "supplier": "c4245fb6f0edcc13a13c3174:58c6802f7268cef432065e701b4f1695:2f1049e7db5443",
+      "supplierContact": "442f4a3e2da3e2e17ff961ed:59cb60abdbebd148151633bec9e3c592:6c154914d1dfb3571a1f",
+      "qtyPerMachine": "8c7bdaff4f92df13b9bd845e:abbc91f72f43e56d5b843809d4a01772:ce48",
+      "price": "88d6930086a7bd344c872e21:e14c0e97f3596a1b70864655bf95fc11:d38b0b",
+      "rack": "A1"
+    }
+  ],
+  "restockHistory": [
+    {
+      "dateTime": "4/3/2026, 11:51:40 pm",
+      "name": "fd51c89702f5e16d69bdc180:64efffd599e28d2e440cb65b3c3953ea:af3cb4",
+      "partNumber": "8dbfd22120784e019c23a9c7:dc247714767755532c8946384f0ca26e:eefaffede4",
+      "qty": 1,
+      "performedBy": "admin"
+    }
+  ],
+  "withdrawalHistory": [],
+  "documents": [
+    {
+      "id": 1772648507019.5518,
+      "originalName": "New Microsoft Excel Worksheet.csv",
+      "storedName": "1772648507019_5295762b40bc7aba.csv",
+      "size": 8308,
+      "mimeType": "text/csv",
+      "uploadedBy": "admin",
+      "uploadedAt": "2026-03-04T18:21:47.020Z"
+    }
+  ]
+}

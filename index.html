@@ -1,0 +1,1885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DTVS Champion Stock List</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --accent:   #2563eb;
+            --accent-r: 37; --accent-g: 99; --accent-b: 235;
+            --success:  #10b981;
+            --danger:   #ef4444;
+            --warn:     #f59e0b;
+            --dark:     #0f172a;
+            --surface:  #1e293b;
+            --muted:    #64748b;
+            --border:   #334155;
+            --bg:       #f1f5f9;
+            --card-bg:  #ffffff;
+            --text:     #0f172a;
+        }
+        body.theme-blue    { --accent:#2563eb; --accent-r:37;  --accent-g:99;  --accent-b:235; }
+        body.theme-emerald { --accent:#059669; --accent-r:5;   --accent-g:150; --accent-b:105; }
+        body.theme-rose    { --accent:#e11d48; --accent-r:225; --accent-g:29;  --accent-b:72;  }
+        body.theme-violet  { --accent:#7c3aed; --accent-r:124; --accent-g:58;  --accent-b:237; }
+        body.theme-amber   { --accent:#d97706; --accent-r:217; --accent-g:119; --accent-b:6;   }
+        body.theme-cyan    { --accent:#0891b2; --accent-r:8;   --accent-g:145; --accent-b:178; }
+        body.mode-dark {
+            --bg: #0f172a; --card-bg: #1e293b; --text: #f1f5f9;
+            --muted: #94a3b8; --border: #334155;
+        }
+        body.mode-dark .card      { background: var(--card-bg) !important; border-color: #334155 !important; color: var(--text); }
+        body.mode-dark .stat-card { background: var(--card-bg) !important; border-color: #334155 !important; }
+        body.mode-dark .chart-card{ background: var(--card-bg) !important; border-color: #334155 !important; }
+        body.mode-dark .table     { color: var(--text); }
+        body.mode-dark .table-light th { background: #273449 !important; color: #cbd5e1; }
+        body.mode-dark .form-control  { background: #273449; border-color: #334155; color: #f1f5f9; }
+        body.mode-dark .form-control::placeholder { color: #64748b; }
+        body.mode-dark .log-container { background: #1e293b; border-color: #334155; }
+        body.mode-dark .sticky-header th { background: #273449 !important; }
+        body.mode-dark .chart-toggle  { background: #273449; }
+        body.mode-dark .chart-toggle button.active { background: #334155; color: #f1f5f9; }
+        body.mode-dark .modal-content { background: #1e293b; color: #f1f5f9; border-color: #334155; }
+        body.mode-dark .user-row { border-color: #334155; }
+        body.mode-dark .doc-card  { background: #1e293b !important; border-color: #334155 !important; color: #f1f5f9; }
+        body.mode-dark .doc-card .doc-meta { color: #94a3b8; }
+        body { font-family: 'Urbanist', sans-serif; background: var(--bg); color: var(--text); transition: background 0.3s, color 0.3s; }
+        .navbar { background: var(--dark) !important; border-bottom: 1px solid var(--border); }
+        .navbar-brand { font-family: 'Urbanist', sans-serif; font-weight: 800; font-size: 1.2rem; letter-spacing: -0.5px; color: #fff !important; }
+        .hidden { display: none !important; }
+        .nav-link { cursor: pointer; font-weight: 600; font-size: 0.85rem; letter-spacing: 0.3px; color: #94a3b8 !important; transition: color 0.2s; user-select: none; }
+        .nav-link:hover { color: #e2e8f0 !important; }
+        .active-tab { border-bottom: 3px solid var(--accent) !important; color: #fff !important; }
+        .nav-link.dragging { opacity: 0.4; }
+        .nav-link.drag-over { border-bottom: 3px solid #fff !important; }
+        .card { border: 1px solid #e2e8f0; border-radius: 14px; background: var(--card-bg); }
+        .log-container { height: 420px; overflow-y: auto; background: var(--card-bg); border: 1px solid #eee; border-radius: 8px; }
+        .sticky-header th { position: sticky; top: 0; background: #f8f9fa; z-index: 5; box-shadow: inset 0 -1px 0 #dee2e6; }
+        .search-results { position: absolute; z-index: 1050; width: 100%; max-height: 250px; overflow-y: auto; background: white; border: 1px solid #ccc; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .pr-table input { border: none; outline: none; background: transparent; }
+
+        /* ── Rack inline edit ── */
+        .rack-input {
+            border: 1px solid transparent;
+            border-radius: 6px;
+            background: transparent;
+            padding: 3px 7px;
+            font-size: 0.82rem;
+            font-family: 'Urbanist', sans-serif;
+            color: var(--text);
+            width: 90px;
+            transition: border-color 0.15s, background 0.15s;
+            text-align: center;
+        }
+        .rack-input:hover  { border-color: #cbd5e1; background: var(--bg); }
+        .rack-input:focus  { border-color: var(--accent); background: var(--bg); outline: none; box-shadow: 0 0 0 2px rgba(var(--accent-r),var(--accent-g),var(--accent-b),0.15); }
+        .rack-input.saving { border-color: var(--warn); }
+        .rack-input.saved  { border-color: var(--success); }
+        body.mode-dark .rack-input:hover { background: #273449; }
+        body.mode-dark .rack-input:focus { background: #273449; }
+
+        /* ── Dashboard ── */
+        .dash-hero { background: linear-gradient(135deg, var(--dark) 0%, var(--surface) 100%); border-radius: 16px; padding: 28px 32px; margin-bottom: 24px; color: white; position: relative; overflow: hidden; }
+        .dash-hero::before { content: ''; position: absolute; top: -40px; right: -40px; width: 200px; height: 200px; background: radial-gradient(circle, rgba(var(--accent-r),var(--accent-g),var(--accent-b),0.35) 0%, transparent 70%); border-radius: 50%; }
+        .dash-hero h2 { font-family: 'Urbanist', sans-serif; font-weight: 800; font-size: 1.6rem; margin: 0; }
+        .dash-hero p  { color: #94a3b8; margin: 4px 0 0; font-size: 0.9rem; }
+        .stat-card { background: var(--card-bg); border-radius: 14px; padding: 20px 24px; border: 1px solid #e2e8f0; transition: transform 0.15s, box-shadow 0.15s; height: 100%; }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+        .stat-card .label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-bottom: 6px; }
+        .stat-card .value { font-family: 'Urbanist', sans-serif; font-size: 2.2rem; font-weight: 800; line-height: 1; }
+        .stat-card .sub   { font-size: 0.78rem; color: var(--muted); margin-top: 6px; }
+        .stat-card .icon  { font-size: 1.6rem; float: right; opacity: 0.15; margin-top: -4px; }
+        .chart-card { background: var(--card-bg); border-radius: 14px; border: 1px solid #e2e8f0; padding: 20px 24px; height: 100%; }
+        .chart-card h6 { font-family: 'Urbanist', sans-serif; font-weight: 700; font-size: 0.9rem; color: var(--text); margin-bottom: 2px; }
+        .chart-card .sub-lbl { font-size: 0.75rem; color: var(--muted); margin-bottom: 14px; }
+        .chart-toggle { display: inline-flex; background: #f1f5f9; border-radius: 8px; padding: 3px; gap: 2px; }
+        .chart-toggle button { border: none; background: transparent; border-radius: 6px; padding: 4px 12px; font-size: 0.75rem; font-weight: 600; color: var(--muted); cursor: pointer; transition: all 0.15s; font-family: 'Urbanist', sans-serif; }
+        .chart-toggle button.active { background: white; color: var(--dark); box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+        .user-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
+        .user-row:last-child { border-bottom: none; }
+        .user-row .uname  { font-weight: 600; font-size: 0.85rem; }
+        .user-row .counts { display: flex; gap: 10px; }
+        .badge-rs { background: #dcfce7; color: #166534; font-size: 0.75rem; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+        .badge-wd { background: #fee2e2; color: #991b1b; font-size: 0.75rem; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+        canvas { max-height: 230px; }
+        .dash-filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+        .filter-preset-group { display: flex; gap: 6px; flex-wrap: wrap; }
+        .filter-preset { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #cbd5e1; border-radius: 8px; padding: 5px 14px; font-size: 0.78rem; font-weight: 600; cursor: pointer; font-family: 'Urbanist', sans-serif; transition: all 0.15s; }
+        .filter-preset:hover  { background: rgba(255,255,255,0.15); color: #fff; }
+        .filter-preset.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .filter-divider { width: 1px; height: 24px; background: rgba(255,255,255,0.15); margin: 0 4px; }
+        .filter-date-wrap { display: flex; align-items: center; gap: 6px; }
+        .filter-date-wrap label { font-size: 0.75rem; color: #94a3b8; font-weight: 600; white-space: nowrap; }
+        .filter-date-input { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #e2e8f0; border-radius: 8px; padding: 5px 10px; font-size: 0.78rem; font-family: 'Urbanist', sans-serif; outline: none; transition: border 0.15s; }
+        .filter-date-input:focus { border-color: var(--accent); }
+        .filter-apply-btn { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 8px; padding: 5px 14px; font-size: 0.78rem; font-weight: 700; cursor: pointer; font-family: 'Urbanist', sans-serif; transition: all 0.15s; }
+        .filter-apply-btn:hover { background: rgba(255,255,255,0.2); }
+        .dash-range-label { font-size: 0.78rem; color: #64748b; margin-top: 4px; font-style: italic; }
+
+        /* ── Customisation Panel ── */
+        .customize-btn { background: none; border: none; color: #94a3b8; font-size: 1.1rem; cursor: pointer; padding: 4px 8px; border-radius: 8px; transition: background 0.15s, color 0.15s; }
+        .customize-btn:hover { background: #1e293b; color: #fff; }
+        .customize-panel { position: fixed; top: 0; right: -360px; width: 340px; height: 100vh; background: var(--dark); color: #f1f5f9; z-index: 2000; box-shadow: -8px 0 40px rgba(0,0,0,0.4); transition: right 0.35s cubic-bezier(0.4,0,0.2,1); overflow-y: auto; padding: 28px 24px; font-family: 'Urbanist', sans-serif; }
+        .customize-panel.open { right: 0; }
+        .customize-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1999; display: none; }
+        .customize-overlay.open { display: block; }
+        .cp-title { font-weight: 800; font-size: 1.1rem; margin-bottom: 4px; }
+        .cp-sub   { font-size: 0.78rem; color: #64748b; margin-bottom: 24px; }
+        .cp-section { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #64748b; margin-bottom: 10px; margin-top: 24px; }
+        .theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .theme-swatch { border-radius: 10px; padding: 12px 8px; text-align: center; cursor: pointer; font-size: 0.75rem; font-weight: 700; border: 2px solid transparent; transition: all 0.15s; color: #fff; }
+        .theme-swatch:hover { transform: scale(1.04); }
+        .theme-swatch.active { border-color: #fff; box-shadow: 0 0 0 3px rgba(255,255,255,0.3); }
+        .swatch-blue   { background: #2563eb; }
+        .swatch-emerald{ background: #059669; }
+        .swatch-rose   { background: #e11d48; }
+        .swatch-violet { background: #7c3aed; }
+        .swatch-amber  { background: #d97706; }
+        .swatch-cyan   { background: #0891b2; }
+        .mode-toggle { display: flex; align-items: center; justify-content: space-between; background: #1e293b; border-radius: 10px; padding: 12px 16px; }
+        .mode-toggle span { font-size: 0.85rem; font-weight: 600; }
+        .toggle-switch { position: relative; width: 44px; height: 24px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; inset: 0; background: #334155; border-radius: 24px; cursor: pointer; transition: 0.2s; }
+        .toggle-slider:before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+        .toggle-switch input:checked + .toggle-slider { background: var(--accent); }
+        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
+        .tab-sort-list { list-style: none; padding: 0; margin: 0; }
+        .tab-sort-item { display: flex; align-items: center; gap: 10px; background: #1e293b; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; cursor: grab; transition: background 0.15s; font-size: 0.85rem; font-weight: 600; color: #e2e8f0; }
+        .tab-sort-item:active { cursor: grabbing; }
+        .tab-sort-item.drag-over-item { background: #2d3f5e; border: 1px dashed #4a90d9; }
+        .tab-sort-item .drag-handle { color: #475569; font-size: 0.8rem; }
+        .tab-sort-item .tab-eye { margin-left: auto; background: none; border: none; color: #475569; cursor: pointer; font-size: 0.85rem; padding: 0; transition: color 0.15s; }
+        .tab-sort-item .tab-eye:hover { color: #94a3b8; }
+        .tab-sort-item.tab-hidden-item { opacity: 0.4; }
+        .cp-save-btn { width: 100%; margin-top: 28px; padding: 12px; background: var(--accent); border: none; border-radius: 10px; color: white; font-weight: 700; font-size: 0.9rem; font-family: 'Urbanist', sans-serif; cursor: pointer; transition: opacity 0.15s; }
+        .cp-save-btn:hover { opacity: 0.88; }
+        .cp-reset-btn { width: 100%; margin-top: 8px; padding: 10px; background: transparent; border: 1px solid #334155; border-radius: 10px; color: #64748b; font-weight: 600; font-size: 0.85rem; font-family: 'Urbanist', sans-serif; cursor: pointer; transition: all 0.15s; }
+        .cp-reset-btn:hover { border-color: #64748b; color: #94a3b8; }
+
+        /* ── Custom Dialogs ── */
+        .dtvs-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 3000; display: flex; align-items: center; justify-content: center; animation: overlayIn 0.18s ease; }
+        @keyframes overlayIn { from { opacity:0 } to { opacity:1 } }
+        .dtvs-dialog { background: var(--card-bg); color: var(--text); border-radius: 16px; padding: 28px 28px 22px; width: 100%; max-width: 420px; margin: 16px; box-shadow: 0 24px 64px rgba(0,0,0,0.25); animation: dialogIn 0.2s cubic-bezier(0.34,1.56,0.64,1); font-family: 'Urbanist', sans-serif; }
+        @keyframes dialogIn { from { opacity:0; transform:scale(0.92) translateY(10px) } to { opacity:1; transform:scale(1) translateY(0) } }
+        .dtvs-dialog-icon { font-size: 1.8rem; margin-bottom: 10px; }
+        .dtvs-dialog-title { font-weight: 800; font-size: 1.05rem; margin-bottom: 6px; }
+        .dtvs-dialog-msg   { font-size: 0.88rem; color: var(--muted); margin-bottom: 18px; line-height: 1.5; }
+        .dtvs-dialog input, .dtvs-dialog textarea { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 9px; padding: 9px 13px; font-size: 0.88rem; font-family: 'Urbanist', sans-serif; background: var(--bg); color: var(--text); outline: none; margin-bottom: 10px; transition: border 0.15s; box-sizing: border-box; }
+        .dtvs-dialog input:focus, .dtvs-dialog textarea:focus { border-color: var(--accent); }
+        .dtvs-dialog label { font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; display: block; margin-bottom: 4px; }
+        .dtvs-dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+        .dtvs-btn { padding: 9px 20px; border-radius: 9px; font-size: 0.85rem; font-weight: 700; font-family: 'Urbanist', sans-serif; border: none; cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
+        .dtvs-btn:hover  { opacity: 0.88; }
+        .dtvs-btn:active { transform: scale(0.97); }
+        .dtvs-btn-primary  { background: var(--accent); color: #fff; }
+        .dtvs-btn-danger   { background: var(--danger);  color: #fff; }
+        .dtvs-btn-ghost    { background: #f1f5f9; color: var(--muted); }
+        body.mode-dark .dtvs-btn-ghost { background: #273449; color: #94a3b8; }
+        body.mode-dark .dtvs-dialog input, body.mode-dark .dtvs-dialog textarea { background: #273449; border-color: #334155; color: #f1f5f9; }
+        body.mode-dark .dtvs-dialog input:focus, body.mode-dark .dtvs-dialog textarea:focus { border-color: var(--accent); }
+
+        /* ── Documents Tab ── */
+        .doc-drop-zone { border: 2px dashed var(--border); border-radius: 16px; padding: 48px 24px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--card-bg); color: var(--muted); }
+        .doc-drop-zone:hover, .doc-drop-zone.dragover { border-color: var(--accent); background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.05); color: var(--text); }
+        .doc-drop-zone .drop-icon { font-size: 2.8rem; margin-bottom: 10px; display: block; }
+        .doc-drop-zone .drop-title { font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
+        .doc-drop-zone .drop-sub   { font-size: 0.8rem; }
+        .doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-top: 20px; }
+        .doc-card { background: var(--card-bg); border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px 16px 14px; display: flex; flex-direction: column; gap: 8px; transition: transform 0.15s, box-shadow 0.15s; position: relative; overflow: hidden; }
+        .doc-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+        .doc-card-icon { font-size: 2.2rem; line-height: 1; }
+        .doc-card-name { font-weight: 700; font-size: 0.88rem; word-break: break-word; line-height: 1.3; color: var(--text); }
+        .doc-meta { font-size: 0.72rem; color: var(--muted); }
+        .doc-card-actions { display: flex; gap: 6px; margin-top: 4px; }
+        .doc-btn { flex: 1; padding: 6px 0; border-radius: 8px; font-size: 0.76rem; font-weight: 700; border: none; cursor: pointer; font-family: 'Urbanist', sans-serif; transition: opacity 0.15s; }
+        .doc-btn:hover { opacity: 0.82; }
+        .doc-btn-view   { background: rgba(var(--accent-r),var(--accent-g),var(--accent-b),0.12); color: var(--accent); }
+        .doc-btn-delete { background: #fee2e2; color: #ef4444; }
+        .doc-type-stripe { position: absolute; top: 0; left: 0; right: 0; height: 4px; border-radius: 14px 14px 0 0; }
+        .doc-upload-progress { background: #f1f5f9; border-radius: 10px; padding: 16px 20px; display: none; margin-top: 14px; }
+        .doc-upload-progress.show { display: block; }
+        .progress-bar-wrap { background: #e2e8f0; border-radius: 99px; height: 8px; overflow: hidden; margin-top: 8px; }
+        .progress-bar-fill { height: 100%; border-radius: 99px; background: var(--accent); transition: width 0.3s; }
+        .doc-search-bar { display: flex; align-items: center; gap: 10px; margin-top: 20px; margin-bottom: 4px; }
+        .doc-count-badge { background: rgba(var(--accent-r),var(--accent-g),var(--accent-b),0.1); color: var(--accent); font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; white-space: nowrap; }
+        .doc-empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+        .doc-empty-icon { font-size: 3rem; display: block; margin-bottom: 12px; }
+        .doc-empty-title { font-weight: 700; font-size: 1rem; margin-bottom: 4px; color: var(--text); }
+        .doc-empty-sub   { font-size: 0.82rem; }
+        body.mode-dark .doc-upload-progress { background: #273449; }
+        body.mode-dark .progress-bar-wrap   { background: #334155; }
+        body.mode-dark .doc-btn-view   { background: rgba(var(--accent-r),var(--accent-g),var(--accent-b),0.2); }
+        body.mode-dark .doc-btn-delete { background: rgba(239,68,68,0.15); color: #f87171; }
+        body.mode-dark .doc-count-badge { background: rgba(var(--accent-r),var(--accent-g),var(--accent-b),0.2); }
+    </style>
+</head>
+<body class="bg-light theme-blue">
+
+<!-- ══ LOGIN ═════════════════════════════════════════════════════════════════ -->
+<div id="loginSection" class="container mt-5" style="max-width:400px;">
+    <div class="card p-4 shadow text-center border-0">
+        <h4 style="font-family:'Urbanist',sans-serif;font-weight:800;">⚡ DTVS Champion</h4>
+        <p class="text-muted small mb-3">Sign in to continue</p>
+        <input id="user" class="form-control mb-2" placeholder="Username">
+        <input id="pass" type="password" class="form-control mb-3" placeholder="Password">
+        <div class="form-check text-start mb-3">
+            <input class="form-check-input" type="checkbox" id="rememberMe">
+            <label class="form-check-label small text-muted" for="rememberMe">Remember me for 30 days</label>
+        </div>
+        <button onclick="login()" class="btn btn-primary w-100 fw-bold">Sign In</button>
+    </div>
+</div>
+
+<!-- ══ CUSTOMISATION PANEL ════════════════════════════════════════════════════ -->
+<div class="customize-overlay" id="cpOverlay" onclick="closeCustomize()"></div>
+<div class="customize-panel" id="customizePanel">
+    <div class="cp-title">🎨 Customise</div>
+    <div class="cp-sub">Your preferences are saved per account.</div>
+    <div class="cp-section">Colour Theme</div>
+    <div class="theme-grid">
+        <div class="theme-swatch swatch-blue"    onclick="selectTheme('blue')"    id="sw-blue">   🔵 Blue</div>
+        <div class="theme-swatch swatch-emerald" onclick="selectTheme('emerald')" id="sw-emerald">🟢 Emerald</div>
+        <div class="theme-swatch swatch-rose"    onclick="selectTheme('rose')"    id="sw-rose">   🔴 Rose</div>
+        <div class="theme-swatch swatch-violet"  onclick="selectTheme('violet')"  id="sw-violet"> 🟣 Violet</div>
+        <div class="theme-swatch swatch-amber"   onclick="selectTheme('amber')"   id="sw-amber">  🟠 Amber</div>
+        <div class="theme-swatch swatch-cyan"    onclick="selectTheme('cyan')"    id="sw-cyan">   🔷 Cyan</div>
+    </div>
+    <div class="cp-section">Display Mode</div>
+    <div class="mode-toggle">
+        <span>🌙 Dark Mode</span>
+        <label class="toggle-switch">
+            <input type="checkbox" id="darkModeToggle" onchange="toggleDarkMode(this.checked)">
+            <span class="toggle-slider"></span>
+        </label>
+    </div>
+    <div class="cp-section">Tab Order</div>
+    <p style="font-size:0.75rem;color:#64748b;margin-bottom:10px;">Drag to reorder. Click 👁 to hide a tab.</p>
+    <ul class="tab-sort-list" id="tabSortList"></ul>
+    <button class="cp-save-btn"   onclick="saveCustomization()">Save Preferences</button>
+    <button class="cp-reset-btn"  onclick="resetCustomization()">Reset to Default</button>
+</div>
+
+<!-- ══ MAIN ═══════════════════════════════════════════════════════════════════ -->
+<div id="mainSection" class="hidden">
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4 shadow-sm">
+        <div class="container-fluid px-4">
+            <span class="navbar-brand">⚡ DTVS Champion</span>
+            <div class="navbar-nav me-auto" id="navTabsContainer">
+                <a class="nav-link px-3 hidden" id="btnDashboard"  data-tab="Dashboard"  onclick="showTab('Dashboard')">Dashboard</a>
+                <a class="nav-link px-3 hidden" id="btnStock"      data-tab="Stock"      onclick="showTab('Stock')">Stock List</a>
+                <a class="nav-link px-3 hidden" id="btnUpdate"     data-tab="Update"     onclick="showTab('Update')">Stock Update</a>
+                <a class="nav-link px-3 hidden" id="btnBOM"        data-tab="BOM"        onclick="showTab('BOM')">BOM</a>
+                <a class="nav-link px-3 hidden" id="btnHistory"    data-tab="History"    onclick="showTab('History')">History Logs</a>
+                <a class="nav-link px-3 hidden" id="btnPR"         data-tab="PR"         onclick="showTab('PR')">PR Creator</a>
+                <a class="nav-link px-3 hidden" id="btnDocuments"  data-tab="Documents"  onclick="showTab('Documents')">Documents</a>
+                <a class="nav-link px-3 hidden" id="btnSettings"   data-tab="Settings"   onclick="showTab('Settings')">Settings</a>
+            </div>
+            <span id="navUsername" class="text-secondary small me-3"></span>
+            <button class="customize-btn me-2" onclick="openCustomize()" title="Customise">🎨</button>
+            <button onclick="doLogout()" class="btn btn-sm btn-outline-danger">Logout</button>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4">
+
+        <!-- ══ DASHBOARD ══════════════════════════════════════════════════════ -->
+        <div id="tabDashboard" class="tab-content hidden">
+            <div class="dash-hero">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                    <div>
+                        <h2 id="dashGreeting">Good morning 👋</h2>
+                        <p id="dashSubtitle">Here's what's happening this month.</p>
+                    </div>
+                </div>
+                <div class="dash-filter-bar">
+                    <div class="filter-preset-group">
+                        <button class="filter-preset" onclick="setPreset('today',this)">Today</button>
+                        <button class="filter-preset" onclick="setPreset('week',this)">This Week</button>
+                        <button class="filter-preset active" onclick="setPreset('month',this)">This Month</button>
+                        <button class="filter-preset" onclick="setPreset('quarter',this)">This Quarter</button>
+                        <button class="filter-preset" onclick="setPreset('year',this)">This Year</button>
+                        <button class="filter-preset" onclick="setPreset('all',this)">All Time</button>
+                    </div>
+                    <div class="filter-divider"></div>
+                    <div class="filter-date-wrap">
+                        <label>From</label>
+                        <input type="date" id="dashDateFrom" class="filter-date-input">
+                    </div>
+                    <div class="filter-date-wrap">
+                        <label>To</label>
+                        <input type="date" id="dashDateTo" class="filter-date-input">
+                    </div>
+                    <button class="filter-apply-btn" onclick="applyCustomDateRange()">Apply</button>
+                </div>
+                <div class="dash-range-label" id="dashRangeLabel"></div>
+            </div>
+            <div id="dashUser">
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6"><div class="stat-card"><span class="icon">📥</span><div class="label">Restocks This Month</div><div class="value text-success" id="dUserRS">—</div><div class="sub" id="dUserRSqty">— units restocked</div></div></div>
+                    <div class="col-md-6"><div class="stat-card"><span class="icon">📤</span><div class="label">Withdrawals This Month</div><div class="value text-danger" id="dUserWD">—</div><div class="sub" id="dUserWDqty">— units withdrawn</div></div></div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6"><div class="chart-card"><div class="d-flex justify-content-between align-items-start mb-1"><div><h6>Restock vs Withdrawal</h6><div class="sub-lbl">Transaction count this month</div></div><div class="chart-toggle"><button class="active" onclick="toggleChart('userMain','bar',this)">Bar</button><button onclick="toggleChart('userMain','pie',this)">Pie</button></div></div><canvas id="chartUserMain"></canvas></div></div>
+                    <div class="col-md-6"><div class="chart-card"><div class="d-flex justify-content-between align-items-start mb-1"><div><h6>My Activity</h6><div class="sub-lbl">Your personal transactions this month</div></div><div class="chart-toggle"><button class="active" onclick="toggleChart('userMe','bar',this)">Bar</button><button onclick="toggleChart('userMe','pie',this)">Pie</button></div></div><canvas id="chartUserMe"></canvas></div></div>
+                </div>
+            </div>
+            <div id="dashAdmin" class="hidden">
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3"><div class="stat-card"><span class="icon">💰</span><div class="label">Amount Spent (Est.)</div><div class="value text-primary" id="dAdminSpent">—</div><div class="sub">BOM price × qty restocked</div></div></div>
+                    <div class="col-md-3"><div class="stat-card"><span class="icon">📥</span><div class="label">Restocks This Month</div><div class="value text-success" id="dAdminRS">—</div><div class="sub" id="dAdminRSqty">— units</div></div></div>
+                    <div class="col-md-3"><div class="stat-card"><span class="icon">📤</span><div class="label">Withdrawals This Month</div><div class="value text-danger" id="dAdminWD">—</div><div class="sub" id="dAdminWDqty">— units</div></div></div>
+                    <div class="col-md-3"><div class="stat-card"><span class="icon">📧</span><div class="label">PR Emails Sent</div><div class="value text-warning" id="dAdminPRtotal">—</div><div class="sub" id="dAdminPRsub">Auto + Manual</div></div></div>
+                    <div class="col-12 mt-2"><div class="stat-card" style="padding:16px 20px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                            <div class="label" style="margin:0;">🚨 Low / Critical Stock</div>
+                            <span id="lowStockCount" class="badge bg-danger" style="font-size:0.75rem;">0</span>
+                        </div>
+                        <div id="lowStockList" style="font-size:0.82rem;color:var(--muted);"></div>
+                    </div></div>
+                    <div class="col-12 mt-1"><div class="stat-card" style="padding:16px 20px;"><span class="icon">🚨</span><div class="label">Low / Critical Stock</div><div id="lowStockList" style="margin-top:6px;"></div></div></div>
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4"><div class="chart-card"><div class="d-flex justify-content-between align-items-start mb-1"><div><h6>Restock vs Withdrawal</h6><div class="sub-lbl">Transaction counts this month</div></div><div class="chart-toggle"><button class="active" onclick="toggleChart('adminRW','bar',this)">Bar</button><button onclick="toggleChart('adminRW','pie',this)">Pie</button></div></div><canvas id="chartAdminRW"></canvas></div></div>
+                    <div class="col-md-4"><div class="chart-card"><div class="d-flex justify-content-between align-items-start mb-1"><div><h6>PR Breakdown</h6><div class="sub-lbl">Auto-triggered vs Manually sent</div></div><div class="chart-toggle"><button class="active" onclick="toggleChart('adminPR','bar',this)">Bar</button><button onclick="toggleChart('adminPR','pie',this)">Pie</button></div></div><canvas id="chartAdminPR"></canvas></div></div>
+                    <div class="col-md-4"><div class="chart-card"><div class="d-flex justify-content-between align-items-start mb-1"><div><h6>Top Withdrawn Items</h6><div class="sub-lbl">By quantity this month</div></div><div class="chart-toggle"><button class="active" onclick="toggleChart('adminTop','bar',this)">Bar</button><button onclick="toggleChart('adminTop','pie',this)">Pie</button></div></div><canvas id="chartAdminTop"></canvas></div></div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-5"><div class="chart-card"><div class="d-flex justify-content-between align-items-start mb-1"><div><h6>Activity by User</h6><div class="sub-lbl">Total transactions per staff this month</div></div><div class="chart-toggle"><button class="active" onclick="toggleChart('adminUser','bar',this)">Bar</button><button onclick="toggleChart('adminUser','pie',this)">Pie</button></div></div><canvas id="chartAdminUser"></canvas></div></div>
+                    <div class="col-md-7"><div class="chart-card"><h6>Staff Activity Breakdown</h6><div class="sub-lbl">Restocks and withdrawals per user this month</div><div id="userBreakdownList"></div></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ STOCK LIST ══════════════════════════════════════════════════════ -->
+        <div id="tabStock" class="tab-content hidden">
+            <div class="card p-4 shadow-sm border-0">
+                <div class="d-flex justify-content-between mb-3">
+                    <h4>📦 Inventory</h4>
+                    <input type="text" id="findStock" class="form-control w-auto" placeholder="Search by name, part # or supplier..." onkeyup="renderTables()">
+                </div>
+                <table class="table table-hover">
+                    <thead class="table-light"><tr>
+                            <th class="sort-th" onclick="sortStock('partNumber')" style="cursor:pointer;user-select:none;">Part # <span id="sort-partNumber">⇅</span></th>
+                            <th class="sort-th" onclick="sortStock('name')" style="cursor:pointer;user-select:none;">Name <span id="sort-name">⇅</span></th>
+                            <th class="sort-th" onclick="sortStock('supplier')" style="cursor:pointer;user-select:none;">Supplier <span id="sort-supplier">⇅</span></th>
+                            <th>Contact</th>
+                            <th class="sort-th" onclick="sortStock('qtyPerMachine')" style="cursor:pointer;user-select:none;">Qty/Machine <span id="sort-qtyPerMachine">⇅</span></th>
+                            <th>Rack</th>
+                            <th class="sort-th" onclick="sortStock('quantity')" style="cursor:pointer;user-select:none;">Stock <span id="sort-quantity">⇅</span></th>
+                        </tr></thead>
+                    <tbody id="stockTable"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ══ STOCK UPDATE ════════════════════════════════════════════════════ -->
+        <div id="tabUpdate" class="tab-content hidden">
+            <div class="card p-4 shadow-sm border-0">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0">Stock Update</h5>
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="showLowStockOnly" onchange="renderTables()">
+                        <label class="form-check-label small fw-semibold text-danger" for="showLowStockOnly">🚨 Show critical only</label>
+                    </div>
+                </div>
+                <input id="searchUpdate" class="form-control mb-3" placeholder="Search by name, part # or supplier..." onkeyup="renderTables()">
+                <table class="table align-middle">
+                    <!-- ✦ Added Rack column header -->
+                    <thead class="table-light"><tr><th>Part #</th><th>Name</th><th>Supplier Info</th><th>Stock Status</th><th style="width:110px;">Rack</th><th>Update</th></tr></thead>
+                    <tbody id="updateTable"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ══ BOM ════════════════════════════════════════════════════════════ -->
+        <div id="tabBOM" class="tab-content hidden">
+            <div id="bomAdminArea" class="card p-4 mb-4 border-primary shadow-sm hidden">
+                <h6>✨ Register New Material</h6>
+                <div class="row g-2">
+                    <input id="regPart"        class="col form-control mx-1" placeholder="Part #">
+                    <input id="regName"        class="col form-control mx-1" placeholder="Name *" oninput="this.classList.remove('is-invalid')">
+                    <input id="regSupp"        class="col form-control mx-1" placeholder="Supplier">
+                    <input id="regSuppContact" class="col form-control mx-1" placeholder="Contact">
+                    <input id="regQtyM"  type="number" class="col form-control mx-1" placeholder="Qty/M">
+                    <input id="regCrit"  type="number" class="col form-control mx-1" placeholder="Limit">
+                    <input id="regPrice" type="number" class="col form-control mx-1" placeholder="Price">
+                    <!-- ✦ Added Rack input in register form -->
+                    <input id="regRack"        class="col form-control mx-1" placeholder="Rack">
+                    <button onclick="addNew()" class="col-2 btn btn-primary" id="addNewBtn">Add Item</button>
+                </div>
+            </div>
+            <div class="card p-4 shadow-sm border-0">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0">📋 Bill of Materials</h5>
+                    <div class="d-flex gap-2 align-items-center">
+                        <button onclick="exportBomXls()" class="btn btn-sm btn-outline-primary">📤 Export XLS</button>
+                        <div id="bomImportArea" class="hidden">
+                            <input type="file" id="bomXlsInput" accept=".xls,.xlsx" style="display:none" onchange="importBomXls(this)">
+                            <button onclick="document.getElementById('bomXlsInput').click()" class="btn btn-sm btn-outline-success">
+                                📥 Import XLS
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <input id="searchBOM" class="form-control mb-3" placeholder="Search by name, part # or supplier..." onkeyup="renderTables()">
+                <table class="table align-middle">
+                    <!-- ✦ Added Rack column header -->
+                    <thead class="table-light"><tr><th>Part #</th><th>Name</th><th>Supplier Info</th><th>Stock Status</th><th>Price</th><th style="width:110px;">Rack</th><th>Manage</th></tr></thead>
+                    <tbody id="bomTable"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ══ HISTORY LOGS ════════════════════════════════════════════════════ -->
+        <div id="tabHistory" class="tab-content hidden">
+            <div class="row">
+                <div class="col-md-5">
+                    <div class="card p-3 border-success shadow-sm">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="text-success fw-bold mb-0">📥 Restocks</h6>
+                            <div class="d-flex gap-1">
+                            <button onclick="exportHistory('restock')" class="btn btn-sm btn-outline-success">PDF</button>
+                            <button onclick="exportHistoryXls('restock')" class="btn btn-sm btn-success">XLS</button>
+                        </div>
+                        </div>
+                        <input id="rsSearch" class="form-control mb-2" onkeyup="renderTables()" placeholder="Search Restocks...">
+                        <div class="log-container">
+                            <table class="table table-sm table-hover text-center">
+                                <thead class="sticky-header"><tr><th>Name</th><th>Qty</th><th>Date</th><th>By</th></tr></thead>
+                                <tbody id="restockLog"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-7">
+                    <div class="card p-3 border-danger shadow-sm">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="text-danger fw-bold mb-0">📤 Withdrawals</h6>
+                            <div class="d-flex gap-1">
+                            <button onclick="exportHistory('withdraw')" class="btn btn-sm btn-outline-danger">PDF</button>
+                            <button onclick="exportHistoryXls('withdraw')" class="btn btn-sm btn-danger">XLS</button>
+                        </div>
+                        </div>
+                        <input id="wsSearch" class="form-control mb-2" onkeyup="renderTables()" placeholder="Search Withdrawals...">
+                        <div class="log-container">
+                            <table class="table table-sm table-hover text-center">
+                                <thead class="sticky-header"><tr><th>Name</th><th>Qty</th><th>Giver</th><th>Taker</th><th>Comment</th><th>Date</th><th>By</th></tr></thead>
+                                <tbody id="withdrawalLog"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ PR CREATOR ══════════════════════════════════════════════════════ -->
+        <div id="tabPR" class="tab-content hidden">
+            <div class="card p-4 shadow-sm border-0">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4>📝 PR Creator</h4>
+                    <button onclick="clearPR()" class="btn btn-sm btn-outline-secondary">Clear All Rows</button>
+                </div>
+                <input id="prSearchInput" class="form-control mb-3" placeholder="Type name or part # to add items..." onkeyup="searchPR()">
+                <div id="prResults" class="list-group search-results"></div>
+                <table class="table table-bordered pr-table">
+                    <thead class="table-dark text-center">
+                        <tr><th style="width:50px;">#</th><th>Name</th><th>Part Number</th><th style="width:120px;">Qty</th><th style="width:150px;">Price (Est)</th><th style="width:50px;">Action</th></tr>
+                    </thead>
+                    <tbody id="prTableBody"><tr><td colspan="6" class="text-center text-muted">No items added. Search above to begin.</td></tr></tbody>
+                </table>
+                <button onclick="sendPR()" id="sendPrBtn" class="btn btn-success mt-3 w-100">📧 Send PR Mail (0 Items)</button>
+            </div>
+        </div>
+
+        <!-- ══ DOCUMENTS ════════════════════════════════════════════════════════ -->
+        <div id="tabDocuments" class="tab-content hidden">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0">📁 Documents</h4>
+                <span id="docCountBadge" class="doc-count-badge">0 files</span>
+            </div>
+            <div id="docUploadArea" class="hidden">
+                <div class="doc-drop-zone" id="docDropZone"
+                     onclick="document.getElementById('docFileInput').click()"
+                     ondragover="docDragOver(event)" ondragleave="docDragLeave(event)" ondrop="docDrop(event)">
+                    <span class="drop-icon">📂</span>
+                    <div class="drop-title">Click to upload or drag & drop files here</div>
+                    <div class="drop-sub">PDF, Word, Excel, PowerPoint, CSV, Images, ZIP — up to 50 MB each</div>
+                </div>
+                <div class="d-flex gap-2 mb-2 mt-2">
+                    <select id="docUploadCategory" class="form-select form-select-sm" style="max-width:200px;">
+                        <option value="">No category</option>
+                        <option value="Manuals">Manuals</option>
+                        <option value="Invoices">Invoices</option>
+                        <option value="Specs">Specs</option>
+                        <option value="Reports">Reports</option>
+                        <option value="Other">Other</option>
+                    </select>
+                    <small class="text-muted align-self-center">Tag files before uploading</small>
+                </div>
+                <input type="file" id="docFileInput" multiple style="display:none" onchange="docFilesSelected(this.files)">
+                <div class="doc-upload-progress" id="docUploadProgress">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span style="font-size:0.85rem;font-weight:700;" id="docUploadStatus">Uploading...</span>
+                        <span style="font-size:0.8rem;color:var(--muted);" id="docUploadPct">0%</span>
+                    </div>
+                    <div class="progress-bar-wrap">
+                        <div class="progress-bar-fill" id="docProgressBar" style="width:0%"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="doc-search-bar">
+                <input type="text" id="docSearch" class="form-control" placeholder="Search documents..." oninput="renderDocuments()">
+                <select id="docCategoryFilter" class="form-select" style="max-width:160px;" onchange="renderDocuments()">
+                    <option value="">All categories</option>
+                    <option value="Manuals">Manuals</option>
+                    <option value="Invoices">Invoices</option>
+                    <option value="Specs">Specs</option>
+                    <option value="Reports">Reports</option>
+                    <option value="Other">Other</option>
+                </select>
+                <select id="docTypeFilter" class="form-select" style="max-width:160px;" onchange="renderDocuments()">
+                    <option value="">All types</option>
+                    <option value="pdf">PDF</option>
+                    <option value="word">Word</option>
+                    <option value="excel">Excel / CSV</option>
+                    <option value="powerpoint">PowerPoint</option>
+                    <option value="image">Images</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div id="docGrid" class="doc-grid"></div>
+            <div id="docEmpty" class="doc-empty hidden">
+                <span class="doc-empty-icon">🗂️</span>
+                <div class="doc-empty-title">No documents yet</div>
+                <div class="doc-empty-sub" id="docEmptySub">No documents have been uploaded.</div>
+            </div>
+        </div>
+
+        <!-- ══ SETTINGS ════════════════════════════════════════════════════════ -->
+        <div id="tabSettings" class="tab-content hidden">
+            <div class="row">
+                <div class="col-md-5">
+                    <div class="card p-3 mb-3 shadow-sm">
+                        <h6>📧 Alert Email</h6>
+                        <input id="adminMailInput" class="form-control mb-2" placeholder="admin@example.com">
+                        <button onclick="saveSettings()" class="btn btn-sm btn-primary mb-0">Save Email</button>
+                    </div>
+                    <div id="adminMailCredsArea" class="card p-3 mb-3 shadow-sm hidden">
+                        <h6>✉️ Mail Server Credentials</h6>
+                        <small class="text-muted d-block mb-2">Gmail account used to send PR emails. Leave password blank to keep existing.</small>
+                        <input id="mailUser" type="email" class="form-control mb-2" placeholder="Gmail address">
+                        <input id="mailPass" type="password" class="form-control mb-2" placeholder="App password (leave blank to keep)">
+                        <button onclick="saveMailCreds()" class="btn btn-sm btn-secondary w-100">Save Mail Settings</button>
+                    </div>
+                    <div class="card p-3 mb-3 shadow-sm border-secondary">
+                        <h6>🔑 Change Password</h6>
+                        <input id="pwCurrent" type="password" class="form-control mb-2" placeholder="Current password">
+                        <input id="pwNew"     type="password" class="form-control mb-2" placeholder="New password (min 6 chars)">
+                        <input id="pwConfirm" type="password" class="form-control mb-2" placeholder="Confirm new password">
+                        <button onclick="changePassword()" class="btn btn-sm btn-secondary w-100">Update Password</button>
+                    </div>
+                    <div id="adminResetArea" class="card p-3 mb-3 border-danger shadow-sm hidden">
+                        <h6 class="text-danger">⚠️ System Maintenance</h6>
+                        <p class="small text-muted">Warning: These actions delete database records permanently.</p>
+                        <div class="d-grid gap-2">
+                            <button onclick="clearSystemData('history')"  class="btn btn-sm btn-outline-warning">Clear All History Logs</button>
+                            <button onclick="clearSystemData('registry')" class="btn btn-sm btn-outline-danger">Clear All Registry (Items)</button>
+                        </div>
+                    </div>
+                    <div class="card p-3 shadow-sm">
+                        <h6>👤 User Management</h6>
+                        <input id="newU" class="form-control mb-2" placeholder="Username">
+                        <input id="newP" type="password" class="form-control mb-2" placeholder="Password">
+                        <div class="border p-2 rounded mb-2 bg-light">
+                            <small class="fw-bold d-block mb-1">Permissions:</small>
+                            <div class="form-check"><input class="form-check-input" type="checkbox" id="pStock"   checked><label class="form-check-label">Stock List</label></div>
+                            <div class="form-check"><input class="form-check-input" type="checkbox" id="pUpdate"  checked><label class="form-check-label">Stock Update</label></div>
+                            <div class="form-check d-flex align-items-center gap-2">
+                                <input class="form-check-input" type="checkbox" id="pBOM" checked>
+                                <label class="form-check-label">BOM:</label>
+                                <select id="pBOMLevel" class="form-select form-select-sm" style="width:auto;">
+                                    <option value="full">Full Control</option>
+                                    <option value="view">View Only</option>
+                                </select>
+                            </div>
+                            <div class="form-check"><input class="form-check-input" type="checkbox" id="pHistory" checked><label class="form-check-label">History Logs</label></div>
+                            <div class="form-check"><input class="form-check-input" type="checkbox" id="pPR"      checked><label class="form-check-label">PR Creator</label></div>
+                        </div>
+                        <button onclick="saveUser()" class="btn btn-dark w-100">Create Account</button>
+                    </div>
+                </div>
+                <div class="col-md-7">
+                    <div class="card p-3 mb-3 shadow-sm">
+                        <h6>Staff List</h6>
+                        <table class="table table-sm align-middle">
+                            <thead><tr class="text-muted" style="font-size:0.8rem;"><th>USER</th><th>PERMISSIONS</th><th class="text-end">ACTION</th></tr></thead>
+                            <tbody id="userTable"></tbody>
+                        </table>
+                    </div>
+                    <div id="adminAuditArea" class="card p-3 shadow-sm hidden">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="mb-0">🔍 Admin Audit Log</h6>
+                            <button onclick="loadAuditLog()" class="btn btn-sm btn-outline-secondary">↺ Refresh</button>
+                        </div>
+                        <div style="max-height:300px;overflow-y:auto;">
+                            <table class="table table-sm" style="font-size:0.8rem;">
+                                <thead class="sticky-header"><tr><th>Time</th><th>Action</th><th>By</th><th>Detail</th></tr></thead>
+                                <tbody id="auditLogBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /container-fluid -->
+</div><!-- /mainSection -->
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-body">
+                <input type="hidden" id="editId">
+                <input type="text"   id="editName"        class="form-control mb-2" placeholder="Name">
+                <input type="text"   id="editSupp"        class="form-control mb-2" placeholder="Supplier">
+                <input type="text"   id="editSuppContact" class="form-control mb-2" placeholder="Contact">
+                <input type="number" id="editQtyM"        class="form-control mb-2" placeholder="Qty/Machine">
+                <input type="number" id="editLimit"       class="form-control mb-2" placeholder="Critical Limit">
+                <input type="number" id="editPrice"       class="form-control mb-2" placeholder="Price">
+                <!-- ✦ Added Rack field in edit modal -->
+                <input type="text"   id="editRack"        class="form-control"      placeholder="Rack (e.g. A1, B3)">
+            </div>
+            <div class="modal-footer">
+                <button onclick="saveEdit()" class="btn btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="dtvsDialogContainer"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+
+// ════════════════════════════════════════════════════════════════
+//  CUSTOM DIALOG SYSTEM
+// ════════════════════════════════════════════════════════════════
+function _showDialog(html, onMount) {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'dtvs-overlay';
+        overlay.innerHTML = `<div class="dtvs-dialog">${html}</div>`;
+        document.getElementById('dtvsDialogContainer').appendChild(overlay);
+        if (onMount) onMount(overlay, resolve);
+        overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); resolve(null); } });
+    });
+}
+function dtvsAlert(msg, { title='Notice', icon='ℹ️', btnText='OK', btnClass='dtvs-btn-primary' } = {}) {
+    return _showDialog(`<div class="dtvs-dialog-icon">${icon}</div><div class="dtvs-dialog-title">${title}</div><div class="dtvs-dialog-msg">${msg}</div><div class="dtvs-dialog-actions"><button class="dtvs-btn ${btnClass}" id="_dtvsOk">${btnText}</button></div>`,
+        (overlay, resolve) => { overlay.querySelector('#_dtvsOk').onclick = () => { overlay.remove(); resolve(true); }; overlay.querySelector('#_dtvsOk').focus(); });
+}
+function dtvsConfirm(msg, { title='Are you sure?', icon='⚠️', confirmText='Confirm', confirmClass='dtvs-btn-danger', cancelText='Cancel' } = {}) {
+    return _showDialog(`<div class="dtvs-dialog-icon">${icon}</div><div class="dtvs-dialog-title">${title}</div><div class="dtvs-dialog-msg">${msg}</div><div class="dtvs-dialog-actions"><button class="dtvs-btn dtvs-btn-ghost" id="_dtvsCancel">${cancelText}</button><button class="dtvs-btn ${confirmClass}" id="_dtvsConfirm">${confirmText}</button></div>`,
+        (overlay, resolve) => { overlay.querySelector('#_dtvsConfirm').onclick = () => { overlay.remove(); resolve(true); }; overlay.querySelector('#_dtvsCancel').onclick = () => { overlay.remove(); resolve(false); }; });
+}
+function dtvsWithdrawPrompt(itemName) {
+    return _showDialog(`<div class="dtvs-dialog-icon">📤</div><div class="dtvs-dialog-title">Withdraw Stock</div><div class="dtvs-dialog-msg" style="margin-bottom:14px;">${itemName}</div><label>Quantity *</label><input id="_wQty" type="number" min="1" placeholder="Enter quantity"><label>Giver</label><input id="_wGiver" type="text" placeholder="Who is giving the item"><label>Taker</label><input id="_wTaker" type="text" placeholder="Who is taking the item"><label>Comment</label><input id="_wComment" type="text" placeholder="Optional note"><div class="dtvs-dialog-actions"><button class="dtvs-btn dtvs-btn-ghost" id="_dtvsCancel">Cancel</button><button class="dtvs-btn dtvs-btn-danger" id="_dtvsOk">Withdraw</button></div>`,
+        (overlay, resolve) => {
+            const qtyEl = overlay.querySelector('#_wQty'); qtyEl.focus();
+            overlay.querySelector('#_dtvsOk').onclick = () => { const qty = qtyEl.value.trim(); if (!qty || isNaN(qty) || parseInt(qty) < 1) { qtyEl.style.borderColor='var(--danger)'; qtyEl.focus(); return; } overlay.remove(); resolve({ qty, giver: overlay.querySelector('#_wGiver').value.trim(), taker: overlay.querySelector('#_wTaker').value.trim(), comment: overlay.querySelector('#_wComment').value.trim() }); };
+            overlay.querySelector('#_dtvsCancel').onclick = () => { overlay.remove(); resolve(null); };
+        });
+}
+function dtvsRestockPrompt(itemName) {
+    return _showDialog(`<div class="dtvs-dialog-icon">📥</div><div class="dtvs-dialog-title">Restock</div><div class="dtvs-dialog-msg" style="margin-bottom:14px;">${itemName}</div><label>Quantity to add *</label><input id="_rQty" type="number" min="1" placeholder="Enter quantity"><div class="dtvs-dialog-actions"><button class="dtvs-btn dtvs-btn-ghost" id="_dtvsCancel">Cancel</button><button class="dtvs-btn dtvs-btn-primary" id="_dtvsOk">Restock</button></div>`,
+        (overlay, resolve) => {
+            const qtyEl = overlay.querySelector('#_rQty'); qtyEl.focus();
+            overlay.querySelector('#_dtvsOk').onclick = () => { const qty = qtyEl.value.trim(); if (!qty || isNaN(qty) || parseInt(qty) < 1) { qtyEl.style.borderColor='var(--danger)'; qtyEl.focus(); return; } overlay.remove(); resolve(qty); };
+            overlay.querySelector('#_dtvsCancel').onclick = () => { overlay.remove(); resolve(null); };
+            qtyEl.addEventListener('keydown', e => { if(e.key==='Enter'){ const qty=qtyEl.value.trim(); if(qty&&!isNaN(qty)&&parseInt(qty)>=1){overlay.remove();resolve(qty);} } });
+        });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  GLOBALS
+// ════════════════════════════════════════════════════════════════
+let allData       = { stock: [], restockHistory: [], withdrawalHistory: [], adminEmail: '' };
+let currentUser   = null;
+let prItems       = [];
+let manualPRCount = 0;
+let allDocuments  = [];
+let editModalInstance;
+const chartInstances = {};
+const CANVAS = {
+    userMain:'chartUserMain', userMe:'chartUserMe',
+    adminRW:'chartAdminRW',   adminPR:'chartAdminPR',
+    adminTop:'chartAdminTop', adminUser:'chartAdminUser'
+};
+const ALL_TABS = [
+    { key:'Dashboard', label:'Dashboard',   icon:'🏠' },
+    { key:'Stock',     label:'Stock List',  icon:'📦' },
+    { key:'Update',    label:'Stock Update',icon:'🔄' },
+    { key:'BOM',       label:'BOM',         icon:'📋' },
+    { key:'History',   label:'History Logs',icon:'📜' },
+    { key:'PR',        label:'PR Creator',  icon:'📝' },
+    { key:'Documents', label:'Documents',   icon:'📁' },
+    { key:'Settings',  label:'Settings',    icon:'⚙️'  }
+];
+let cpState  = { theme:'blue', dark:false, tabOrder: ALL_TABS.map(t=>t.key), hiddenTabs:[] };
+let dragSrcIdx = null;
+
+// ════════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+    editModalInstance = new bootstrap.Modal(document.getElementById('editModal'));
+    const h = new Date().getHours();
+    document.getElementById('dashGreeting').textContent = h < 12 ? 'Good morning 👋' : h < 17 ? 'Good afternoon 👋' : 'Good evening 👋';
+});
+
+// ════════════════════════════════════════════════════════════════
+//  CUSTOMIZATION
+// ════════════════════════════════════════════════════════════════
+function cpKey() { return `dtvs_prefs_${currentUser.username}`; }
+function loadCustomization() {
+    try { const raw = localStorage.getItem(cpKey()); if (raw) cpState = { ...cpState, ...JSON.parse(raw) }; } catch(e) {}
+    applyTheme(cpState.theme); applyDarkMode(cpState.dark); applyTabOrder();
+}
+function saveCustomization() {
+    localStorage.setItem(cpKey(), JSON.stringify(cpState));
+    applyTheme(cpState.theme); applyDarkMode(cpState.dark); applyTabOrder();
+    closeCustomize(); showToast('Preferences saved ✓');
+}
+function resetCustomization() {
+    cpState = { theme:'blue', dark:false, tabOrder: ALL_TABS.map(t=>t.key), hiddenTabs:[] };
+    localStorage.removeItem(cpKey());
+    applyTheme('blue'); applyDarkMode(false); applyTabOrder(); renderTabSortList();
+    document.getElementById('darkModeToggle').checked = false;
+    document.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+    document.getElementById('sw-blue').classList.add('active');
+    closeCustomize(); showToast('Reset to defaults ✓');
+}
+function applyTheme(theme) {
+    document.body.className = document.body.className.replace(/theme-\w+/g,'').trim();
+    document.body.classList.add('theme-' + theme); cpState.theme = theme;
+}
+function selectTheme(theme) {
+    applyTheme(theme);
+    document.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+    document.getElementById('sw-' + theme).classList.add('active');
+}
+function applyDarkMode(on) { document.body.classList.toggle('mode-dark', on); cpState.dark = on; }
+function toggleDarkMode(on) { applyDarkMode(on); }
+function applyTabOrder() {
+    const nav = document.getElementById('navTabsContainer');
+    const order = cpState.tabOrder || ALL_TABS.map(t=>t.key);
+    order.forEach(key => {
+        const btn = document.getElementById('btn' + key);
+        if (!btn) return;
+        nav.appendChild(btn);
+        if (cpState.hiddenTabs.includes(key)) { btn.dataset.cpHidden = 'true'; btn.classList.add('hidden'); }
+        else { btn.dataset.cpHidden = 'false'; if (btn.dataset.permVisible === 'true') btn.classList.remove('hidden'); }
+    });
+}
+function openCustomize() {
+    renderTabSortList();
+    document.getElementById('darkModeToggle').checked = cpState.dark;
+    document.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+    const sw = document.getElementById('sw-' + cpState.theme); if (sw) sw.classList.add('active');
+    document.getElementById('customizePanel').classList.add('open');
+    document.getElementById('cpOverlay').classList.add('open');
+}
+function closeCustomize() {
+    document.getElementById('customizePanel').classList.remove('open');
+    document.getElementById('cpOverlay').classList.remove('open');
+}
+function renderTabSortList() {
+    const list = document.getElementById('tabSortList');
+    const order = cpState.tabOrder || ALL_TABS.map(t=>t.key);
+    list.innerHTML = '';
+    order.forEach((key, idx) => {
+        const tab = ALL_TABS.find(t => t.key === key); if (!tab) return;
+        const isHidden = cpState.hiddenTabs.includes(key);
+        const li = document.createElement('li');
+        li.className = 'tab-sort-item' + (isHidden ? ' tab-hidden-item' : '');
+        li.draggable = true; li.dataset.key = key; li.dataset.idx = idx;
+        li.innerHTML = `<span class="drag-handle">⠿</span><span>${tab.icon} ${tab.label}</span><button class="tab-eye" onclick="toggleTabVisibility('${key}')">${isHidden ? '🙈' : '👁'}</button>`;
+        li.addEventListener('dragstart', e => { dragSrcIdx = idx; li.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
+        li.addEventListener('dragend', () => li.classList.remove('dragging'));
+        li.addEventListener('dragover', e => { e.preventDefault(); li.classList.add('drag-over-item'); });
+        li.addEventListener('dragleave', () => li.classList.remove('drag-over-item'));
+        li.addEventListener('drop', e => { e.preventDefault(); li.classList.remove('drag-over-item'); if (dragSrcIdx===null||dragSrcIdx===idx) return; const newOrder=[...cpState.tabOrder]; const [moved]=newOrder.splice(dragSrcIdx,1); newOrder.splice(idx,0,moved); cpState.tabOrder=newOrder; renderTabSortList(); });
+        list.appendChild(li);
+    });
+}
+function toggleTabVisibility(key) {
+    if (cpState.hiddenTabs.includes(key)) cpState.hiddenTabs = cpState.hiddenTabs.filter(k=>k!==key);
+    else cpState.hiddenTabs.push(key);
+    renderTabSortList();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  TOAST
+// ════════════════════════════════════════════════════════════════
+function showToast(msg) {
+    const t = document.createElement('div');
+    t.style.cssText = `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--dark);color:#fff;padding:10px 22px;border-radius:10px;font-size:0.85rem;font-weight:600;font-family:'Urbanist',sans-serif;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.3);animation:fadeInUp 0.25s ease;`;
+    t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2200);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  TAB NAVIGATION
+// ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+//  LOGIN
+// ════════════════════════════════════════════════════════════════
+async function login() {
+    const username   = document.getElementById('user').value.trim();
+    const password   = document.getElementById('pass').value;
+    const rememberMe = document.getElementById('rememberMe') ? document.getElementById('rememberMe').checked : false;
+
+    if (!username || !password) {
+        dtvsAlert('Please enter your username and password.', { title:'Required', icon:'\u26a0\ufe0f', btnClass:'dtvs-btn-primary' });
+        return;
+    }
+
+    let res;
+    try {
+        res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, rememberMe })
+        });
+    } catch(e) {
+        dtvsAlert('Could not reach the server. Is it running?', { title:'Connection Error', icon:'\ud83d\udd0c', btnClass:'dtvs-btn-danger' });
+        return;
+    }
+
+    if (!res.ok) {
+        dtvsAlert('Incorrect username or password.', { title:'Access Denied', icon:'\ud83d\udd12', btnClass:'dtvs-btn-danger' });
+        return;
+    }
+
+    const d = await res.json();
+    currentUser = d.user;
+
+    document.getElementById('loginSection').classList.add('hidden');
+    document.getElementById('mainSection').classList.remove('hidden');
+    document.getElementById('navUsername').textContent = '\ud83d\udc64 ' + currentUser.username;
+
+    const markVisible = (elId) => {
+        const btn = document.getElementById(elId);
+        if (btn) { btn.dataset.permVisible = 'true'; btn.classList.remove('hidden'); }
+    };
+    const showEl = (elId) => {
+        const el = document.getElementById(elId);
+        if (el) el.classList.remove('hidden');
+    };
+
+    markVisible('btnDashboard');
+    markVisible('btnDocuments');
+
+    if (currentUser.role === 'superadmin') {
+        ['btnStock','btnUpdate','btnBOM','btnHistory','btnPR','btnSettings'].forEach(markVisible);
+        ['bomAdminArea','bomImportArea','adminResetArea','docUploadArea','adminMailCredsArea','adminAuditArea'].forEach(showEl);
+    } else {
+        const p = currentUser.permissions || {};
+        if (p.stock)   markVisible('btnStock');
+        if (p.update)  markVisible('btnUpdate');
+        if (p.bom)     markVisible('btnBOM');
+        if (p.history) markVisible('btnHistory');
+        if (p.pr)      markVisible('btnPR');
+        if (p.bom === 'full') { ['bomAdminArea','bomImportArea'].forEach(showEl); }
+    }
+
+    loadCustomization();
+    await loadData();
+    initDashFilter();
+    showTab('Dashboard');
+}
+
+// ════════════════════════════════════════════════════════════════
+//  DATA
+// ════════════════════════════════════════════════════════════════
+async function loadData() {
+    const res = await fetch('/api/all');
+    allData = await res.json();
+    document.getElementById('adminMailInput').value = allData.adminEmail || '';
+    renderTables();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  RACK — inline save
+//  Called on blur or Enter from any rack-input in Update/BOM tabs
+// ════════════════════════════════════════════════════════════════
+async function saveRack(id, inputEl) {
+    const rack = inputEl.value.trim();
+    inputEl.classList.add('saving');
+    try {
+        const res = await fetch('/api/update-rack', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, rack })
+        });
+        if (res.ok) {
+            // Update local cache so re-renders stay in sync
+            const item = allData.stock.find(s => s.id == id);
+            if (item) item.rack = rack;
+            inputEl.classList.remove('saving');
+            inputEl.classList.add('saved');
+            setTimeout(() => inputEl.classList.remove('saved'), 1200);
+        }
+    } catch(e) {
+        inputEl.classList.remove('saving');
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  RENDER TABLES
+// ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+//  DASHBOARD DATE FILTER
+// ════════════════════════════════════════════════════════════════
+let dashFilter = { from: null, to: null, preset: 'month' };
+function setPreset(preset, btn) {
+    dashFilter.preset = preset;
+    const now = new Date(); let from, to = new Date(now); to.setHours(23,59,59,999);
+    if (preset==='today')   { from=new Date(now); from.setHours(0,0,0,0); }
+    else if (preset==='week')    { from=new Date(now); from.setDate(now.getDate()-now.getDay()); from.setHours(0,0,0,0); }
+    else if (preset==='month')   { from=new Date(now.getFullYear(),now.getMonth(),1); }
+    else if (preset==='quarter') { const q=Math.floor(now.getMonth()/3); from=new Date(now.getFullYear(),q*3,1); }
+    else if (preset==='year')    { from=new Date(now.getFullYear(),0,1); }
+    else { from=new Date(0); to=new Date(8640000000000000); }
+    dashFilter.from=from; dashFilter.to=to;
+    document.getElementById('dashDateFrom').value = preset==='all'?'':from.toISOString().slice(0,10);
+    document.getElementById('dashDateTo').value   = preset==='all'?'':to.toISOString().slice(0,10);
+    document.querySelectorAll('.filter-preset').forEach(b=>b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    renderDashboard();
+}
+function applyCustomDateRange() {
+    const fromVal=document.getElementById('dashDateFrom').value, toVal=document.getElementById('dashDateTo').value;
+    if (!fromVal||!toVal) { dtvsAlert('Please select both a From and a To date.',{title:'Date Required',icon:'📅',btnClass:'dtvs-btn-primary'}); return; }
+    dashFilter.from=new Date(fromVal+'T00:00:00'); dashFilter.to=new Date(toVal+'T23:59:59'); dashFilter.preset='custom';
+    document.querySelectorAll('.filter-preset').forEach(b=>b.classList.remove('active'));
+    renderDashboard();
+}
+function getFiltered(arr) { if (!dashFilter.from) return arr; return arr.filter(h=>{ const d=new Date(h.dateTime); return d>=dashFilter.from&&d<=dashFilter.to; }); }
+function formatRangeLabel() {
+    if (dashFilter.preset==='all') return 'Showing all-time data';
+    if (!dashFilter.from||!dashFilter.to) return '';
+    const fmt=d=>d.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
+    const labels={today:'Today',week:'This Week',month:'This Month',quarter:'This Quarter',year:'This Year',custom:'Custom Range'};
+    return `${labels[dashFilter.preset]||'Range'}: ${fmt(dashFilter.from)} — ${fmt(dashFilter.to)}`;
+}
+function initDashFilter() {
+    const now=new Date();
+    dashFilter.from=new Date(now.getFullYear(),now.getMonth(),1);
+    dashFilter.to=new Date(now.getFullYear(),now.getMonth()+1,0,23,59,59,999);
+    dashFilter.preset='month';
+    document.getElementById('dashDateFrom').value=dashFilter.from.toISOString().slice(0,10);
+    document.getElementById('dashDateTo').value=dashFilter.to.toISOString().slice(0,10);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  DASHBOARD
+// ════════════════════════════════════════════════════════════════
+function renderDashboard(){
+    const isAdmin=currentUser.role==='superadmin';
+    document.getElementById('dashUser').classList.toggle('hidden',isAdmin);
+    document.getElementById('dashAdmin').classList.toggle('hidden',!isAdmin);
+    document.getElementById('dashRangeLabel').textContent=formatRangeLabel();
+    const presetLabels={today:"today",week:"this week",month:"this month",quarter:"this quarter",year:"this year",all:"all time",custom:"selected range"};
+    const periodText=presetLabels[dashFilter.preset]||'selected period';
+    document.getElementById('dashSubtitle').textContent=isAdmin?`Admin overview — operations summary for ${periodText}.`:`Your activity summary for ${periodText}.`;
+    const rsMonth=getFiltered(allData.restockHistory), wdMonth=getFiltered(allData.withdrawalHistory);
+    const rsQty=rsMonth.reduce((a,h)=>a+(parseInt(h.qty)||0),0), wdQty=wdMonth.reduce((a,h)=>a+(parseInt(h.qty)||0),0);
+    if(!isAdmin){
+        document.getElementById('dUserRS').textContent=rsMonth.length; document.getElementById('dUserRSqty').textContent=rsQty+' units restocked';
+        document.getElementById('dUserWD').textContent=wdMonth.length; document.getElementById('dUserWDqty').textContent=wdQty+' units withdrawn';
+        buildChart('chartUserMain','userMain','bar',['Restocks','Withdrawals'],[rsMonth.length,wdMonth.length],['#10b981','#ef4444']);
+        const myRS=rsMonth.filter(h=>h.performedBy===currentUser.username), myWD=wdMonth.filter(h=>h.performedBy===currentUser.username);
+        buildChart('chartUserMe','userMe','bar',['My Restocks','My Withdrawals'],[myRS.length,myWD.length],['#3b82f6','#f59e0b']);
+    } else {
+        document.getElementById('dAdminRS').textContent=rsMonth.length; document.getElementById('dAdminRSqty').textContent=rsQty+' units';
+        document.getElementById('dAdminWD').textContent=wdMonth.length; document.getElementById('dAdminWDqty').textContent=wdQty+' units';
+        let spent=0; rsMonth.forEach(h=>{const item=allData.stock.find(s=>s.name===h.name);if(item&&item.price)spent+=(parseFloat(item.price)||0)*(parseInt(h.qty)||0);});
+        document.getElementById('dAdminSpent').textContent=spent>0?spent.toLocaleString():'—';
+        const autoPRItems=new Set(); wdMonth.forEach(h=>{const item=allData.stock.find(s=>s.name===h.name);if(item&&item.quantity<=(item.criticalLimit||0))autoPRItems.add(item.id);});
+        const autoPRCount=autoPRItems.size;
+        document.getElementById('dAdminPRtotal').textContent=autoPRCount+manualPRCount;
+        document.getElementById('dAdminPRsub').textContent=`${autoPRCount} auto-triggered · ${manualPRCount} manual`;
+        // FIX #5 — low stock list
+        const lowItems = allData.stock.filter(s => s.quantity <= (s.criticalLimit || 0));
+        document.getElementById('lowStockCount').textContent = lowItems.length;
+        document.getElementById('lowStockList').innerHTML = lowItems.length === 0
+            ? '<span style="color:var(--success);">✅ All items are above critical levels</span>'
+            : lowItems.map(s => `<span class="badge bg-danger me-1 mb-1" style="font-weight:500;">${s.name} (${s.quantity}/${s.criticalLimit})</span>`).join('');
+        buildChartWithMemory('chartAdminRW','adminRW','bar',['Restocks','Withdrawals'],[rsMonth.length,wdMonth.length],['#10b981','#ef4444']);
+        buildChartWithMemory('chartAdminPR','adminPR','bar',['Auto PR','Manual PR'],[autoPRCount,manualPRCount],['#f59e0b','#8b5cf6']);
+        const wdByItem={}; wdMonth.forEach(h=>{wdByItem[h.name]=(wdByItem[h.name]||0)+(parseInt(h.qty)||0);});
+        const top=Object.entries(wdByItem).sort((a,b)=>b[1]-a[1]).slice(0,6);
+        buildChart('chartAdminTop','adminTop','bar',top.map(x=>x[0]),top.map(x=>x[1]),top.map((_,i)=>`hsl(${200+i*28},65%,55%)`));
+        const byUser={}; [...rsMonth,...wdMonth].forEach(h=>{const u=h.performedBy||'Admin';byUser[u]=(byUser[u]||0)+1;});
+        buildChart('chartAdminUser','adminUser','bar',Object.keys(byUser),Object.values(byUser),Object.keys(byUser).map((_,i)=>`hsl(${190+i*45},60%,52%)`));
+        const users=Object.keys(byUser);
+        document.getElementById('userBreakdownList').innerHTML=users.length===0?'<p class="text-muted small mt-2">No staff activity recorded.</p>':users.map(u=>{
+            const uRS=rsMonth.filter(h=>(h.performedBy||'Admin')===u).length, uWD=wdMonth.filter(h=>(h.performedBy||'Admin')===u).length;
+            return`<div class="user-row"><div class="uname">👤 ${u}</div><div class="counts"><span class="badge-rs">📥 ${uRS} restocks</span><span class="badge-wd">📤 ${uWD} withdrawals</span></div></div>`;
+        }).join('');
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  CHARTS
+// ════════════════════════════════════════════════════════════════
+function buildChart(canvasId,key,type,labels,data,colors){
+    // FIX #8 — no-data overlay
+    const canvas = document.getElementById(canvasId);
+    let noDataEl = canvas.parentNode.querySelector('.chart-no-data');
+    if (!data || data.every(v=>v===0) || !labels.length) {
+        if (!noDataEl) { noDataEl = document.createElement('div'); noDataEl.className='chart-no-data'; noDataEl.style.cssText='text-align:center;padding:40px 0;color:var(--muted);font-size:0.85rem;font-weight:600;'; document.getElementById(canvasId).parentNode.appendChild(noDataEl); }
+        noDataEl.textContent = '— No data for this period —';
+        canvas.style.display = 'none';
+    } else {
+        if (noDataEl) noDataEl.remove();
+        canvas.style.display = '';
+    }
+    if(chartInstances[key]){chartInstances[key].destroy();delete chartInstances[key];}
+    const ctx=document.getElementById(canvasId).getContext('2d');
+    chartInstances[key]=new Chart(ctx,{type:type==='pie'?'pie':'bar',data:{labels,datasets:[{data,backgroundColor:colors,borderRadius:type!=='pie'?6:0,borderWidth:type==='pie'?2:0,borderColor:'#fff'}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:type==='pie',position:'bottom',labels:{font:{family:'Urbanist',size:11},padding:12}},tooltip:{bodyFont:{family:'Urbanist'},titleFont:{family:'Urbanist',weight:'700'}}},scales:type!=='pie'?{y:{beginAtZero:true,ticks:{font:{family:'Urbanist',size:11},precision:0},grid:{color:'#f1f5f9'}},x:{ticks:{font:{family:'Urbanist',size:11}},grid:{display:false}}}:{}}});
+}
+// FIX #12 — remember chart type per key across date filter changes
+const chartTypes = {};
+function toggleChart(key,type,btn){
+    btn.closest('.chart-toggle').querySelectorAll('button').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+    chartTypes[key] = type; // persist type
+    const inst=chartInstances[key]; if(!inst)return;
+    buildChart(CANVAS[key],key,type,inst.data.labels,inst.data.datasets[0].data,inst.data.datasets[0].backgroundColor);
+}
+function buildChartWithMemory(canvasId,key,defaultType,labels,data,colors){
+    buildChart(canvasId,key,chartTypes[key]||defaultType,labels,data,colors);
+    // sync toggle button active state
+    document.querySelectorAll(`.chart-toggle [data-chart="${key}"]`).forEach(btn=>{
+        btn.classList.toggle('active', btn.dataset.type===(chartTypes[key]||defaultType));
+    });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  DOCUMENTS — HELPERS
+// ════════════════════════════════════════════════════════════════
+const FILE_TYPE_MAP = {
+    pdf:        { exts:['pdf'],                           icon:'📄', color:'#ef4444', label:'PDF'        },
+    word:       { exts:['doc','docx'],                    icon:'📝', color:'#2563eb', label:'Word'       },
+    excel:      { exts:['xls','xlsx','csv'],              icon:'📊', color:'#16a34a', label:'Spreadsheet'},
+    powerpoint: { exts:['ppt','pptx'],                    icon:'📑', color:'#f97316', label:'Slides'     },
+    image:      { exts:['png','jpg','jpeg','gif','webp'], icon:'🖼️', color:'#8b5cf6', label:'Image'      },
+    zip:        { exts:['zip'],                           icon:'🗜️', color:'#64748b', label:'Archive'    },
+    text:       { exts:['txt'],                           icon:'📃', color:'#94a3b8', label:'Text'       },
+};
+function getFileType(filename) {
+    const ext = (filename.split('.').pop() || '').toLowerCase();
+    for (const [type, info] of Object.entries(FILE_TYPE_MAP)) {
+        if (info.exts.includes(ext)) return { type, ...info };
+    }
+    return { type:'other', icon:'📎', color:'#94a3b8', label:'File' };
+}
+function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+    return (bytes/(1024*1024)).toFixed(1) + ' MB';
+}
+function formatDocDate(iso) {
+    return new Date(iso).toLocaleDateString(undefined, { day:'numeric', month:'short', year:'numeric' });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  DOCUMENTS — LOAD & RENDER
+// ════════════════════════════════════════════════════════════════
+async function loadDocuments() {
+    const res = await fetch('/api/documents');
+    if (!res.ok) return;
+    allDocuments = await res.json();
+    renderDocuments();
+}
+function viewDocument(id, encodedName, mimeType) {
+    const url = `/api/documents/${id}`;
+    if (mimeType === 'application/pdf' || mimeType.startsWith('image/')) { window.open(url, '_blank'); }
+    else { const a = document.createElement('a'); a.href = url; a.download = decodeURIComponent(encodedName); a.click(); }
+}
+async function deleteDocument(id, nameOrEl) {
+    const name = typeof nameOrEl === 'string' ? nameOrEl : (nameOrEl && nameOrEl.dataset ? nameOrEl.dataset.name : String(id));
+    const ok = await dtvsConfirm(`"${name}" will be permanently deleted.`, { title:'Delete Document?', icon:'🗑️', confirmText:'Delete', confirmClass:'dtvs-btn-danger' });
+    if (!ok) return;
+    const res = await fetch(`/api/documents/${id}`, { method:'DELETE' });
+    if (res.ok) { allDocuments = allDocuments.filter(d => String(d.id) !== String(id)); renderDocuments(); showToast('Document deleted'); }
+    else { dtvsAlert('Failed to delete document.', { title:'Error', icon:'❌', btnClass:'dtvs-btn-danger' }); }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  DOCUMENTS — UPLOAD
+// ════════════════════════════════════════════════════════════════
+function docDragOver(e) { e.preventDefault(); document.getElementById('docDropZone').classList.add('dragover'); }
+function docDragLeave(e) { document.getElementById('docDropZone').classList.remove('dragover'); }
+function docDrop(e) { e.preventDefault(); document.getElementById('docDropZone').classList.remove('dragover'); uploadFiles(e.dataTransfer.files); }
+function docFilesSelected(files) { uploadFiles(files); }
+async function uploadFiles(fileList) {
+    if (!fileList || fileList.length === 0) return;
+    const progress = document.getElementById('docUploadProgress');
+    const statusEl = document.getElementById('docUploadStatus');
+    const pctEl    = document.getElementById('docUploadPct');
+    const barEl    = document.getElementById('docProgressBar');
+    progress.classList.add('show');
+    statusEl.textContent = `Uploading ${fileList.length} file${fileList.length>1?'s':''}...`;
+    barEl.style.width = '0%'; pctEl.textContent = '0%';
+    const formData = new FormData();
+    for (const f of fileList) formData.append('files', f);
+    await new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/documents/upload');
+        xhr.upload.onprogress = e => { if (e.lengthComputable) { const pct = Math.round((e.loaded / e.total) * 100); barEl.style.width = pct + '%'; pctEl.textContent = pct + '%'; } };
+        xhr.onload = async () => {
+            barEl.style.width = '100%'; pctEl.textContent = '100%';
+            if (xhr.status === 200) {
+                const result = JSON.parse(xhr.responseText);
+                statusEl.textContent = `✅ ${result.saved.length} file${result.saved.length!==1?'s':''} uploaded successfully`;
+                if (result.errors && result.errors.length) { statusEl.textContent += ` · ⚠️ ${result.errors.length} skipped`; await dtvsAlert(result.errors.join('\n'), { title:'Some files were skipped', icon:'⚠️', btnClass:'dtvs-btn-primary' }); }
+                await loadDocuments();
+            } else { statusEl.textContent = '❌ Upload failed. Please try again.'; }
+            setTimeout(() => { progress.classList.remove('show'); }, 3000);
+            document.getElementById('docFileInput').value = '';
+            resolve();
+        };
+        xhr.onerror = () => { statusEl.textContent = '❌ Network error during upload.'; setTimeout(() => progress.classList.remove('show'), 3000); resolve(); };
+        xhr.send(formData);
+    });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  STOCK UPDATE
+// ════════════════════════════════════════════════════════════════
+async function doUp(id, type) {
+    const item = allData.stock.find(s => s.id == id);
+    const itemName = item ? item.name : '';
+    let amount, details = {};
+    if (type === 'withdraw') {
+        const result = await dtvsWithdrawPrompt(itemName); if (!result) return;
+        amount = result.qty; details = { giver: result.giver, taker: result.taker, comment: result.comment };
+    } else {
+        const qty = await dtvsRestockPrompt(itemName); if (!qty) return; amount = qty;
+    }
+    const res = await fetch('/api/update-stock', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id, amount, type, details }) });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        dtvsAlert(err.error || 'Operation failed.', { title:'Error', icon:'❌', btnClass:'dtvs-btn-danger' });
+        return;
+    }
+    await loadData();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  BOM
+// ════════════════════════════════════════════════════════════════
+async function addNew(){
+    // FIX #13 — validate name before submitting
+    if(!regName.value.trim()){
+        regName.classList.add('is-invalid');
+        regName.focus();
+        return;
+    }
+    await fetch('/api/add-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        partNumber:regPart.value,
+        name:regName.value,
+        supplier:regSupp.value,
+        supplierContact:regSuppContact.value,
+        qtyPerMachine:regQtyM.value,
+        criticalLimit:regCrit.value,
+        price:regPrice.value,
+        rack:regRack.value         // ✦ include rack on add
+    })});
+    regPart.value='';regName.value='';regSupp.value='';regSuppContact.value='';
+    regQtyM.value='';regCrit.value='';regPrice.value='';regRack.value='';
+    await loadData();
+    setTimeout(()=>document.getElementById('regPart')&&document.getElementById('regPart').focus(),100); // FIX #14
+}
+function openEdit(id){
+    const item=allData.stock.find(s=>s.id==id);
+    document.getElementById('editId').value=id;
+    document.getElementById('editName').value=item.name;
+    document.getElementById('editSupp').value=item.supplier||'';
+    document.getElementById('editSuppContact').value=item.supplierContact||'';
+    document.getElementById('editQtyM').value=item.qtyPerMachine||0;
+    document.getElementById('editLimit').value=item.criticalLimit||0;
+    document.getElementById('editPrice').value=item.price||'';
+    document.getElementById('editRack').value=item.rack||'';   // ✦ populate rack in modal
+    editModalInstance.show();
+}
+async function saveEdit(){
+    const id=document.getElementById('editId').value;
+    await fetch('/api/edit-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,updatedItem:{
+        name:document.getElementById('editName').value,
+        supplier:document.getElementById('editSupp').value,
+        supplierContact:document.getElementById('editSuppContact').value,
+        qtyPerMachine:document.getElementById('editQtyM').value,
+        criticalLimit:parseInt(document.getElementById('editLimit').value)||0,
+        price:document.getElementById('editPrice').value,
+        rack:document.getElementById('editRack').value   // ✦ save rack from modal
+    }})});
+    editModalInstance.hide(); await loadData();
+}
+async function deleteItem(id) {
+    const ok = await dtvsConfirm('This item will be permanently removed from the registry.',{title:'Delete Item?',icon:'🗑️',confirmText:'Delete',confirmClass:'dtvs-btn-danger'});
+    if (!ok) return;
+    await fetch('/api/delete-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    await loadData();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  PR CREATOR
+// ════════════════════════════════════════════════════════════════
+function searchPR(){
+    const val=document.getElementById('prSearchInput').value.toLowerCase(); const resDiv=document.getElementById('prResults');
+    if(!val){resDiv.innerHTML='';return;}
+    resDiv.innerHTML=allData.stock.filter(s=>s.name.toLowerCase().includes(val)||s.partNumber.toLowerCase().includes(val)).map(s=>`<button class="list-group-item list-group-item-action" onclick="addToPR('${s.name}','${s.partNumber}')"><b>${s.partNumber}</b> - ${s.name}<span class="badge bg-primary float-end">Add</span></button>`).join('');
+}
+function addToPR(name,part){
+    if(prItems.some(i=>i.partNumber===part)){dtvsAlert('This item is already in your PR list.',{title:'Already Added',icon:'⚠️',btnClass:'dtvs-btn-primary'});return;}
+    // FIX #9 — auto-populate price from BOM
+    const stockItem = allData.stock.find(s=>s.partNumber===part||s.name===name);
+    const price = stockItem && stockItem.price != null && stockItem.price !== '' ? parseFloat(stockItem.price) || 0 : 0;
+    prItems.push({name,partNumber:part,qty:1,price});renderPRTable();
+    document.getElementById('prResults').innerHTML=''; document.getElementById('prSearchInput').value='';
+}
+function updatePRItem(i,f,v){prItems[i][f]=v;}
+function removeFromPR(i){prItems.splice(i,1);renderPRTable();}
+async function clearPR() {
+    const ok = await dtvsConfirm('All items will be removed from the PR list.',{title:'Clear PR List?',icon:'🗑️',confirmText:'Clear All',confirmClass:'dtvs-btn-danger'});
+    if (ok) { prItems=[]; renderPRTable(); }
+}
+function renderPRTable(){
+    document.getElementById('sendPrBtn').innerText=`📧 Send PR Mail (${prItems.length} Items)`;
+    if(prItems.length===0){document.getElementById('prTableBody').innerHTML='<tr><td colspan="6" class="text-center text-muted">No items added. Search above to begin.</td></tr>';return;}
+    document.getElementById('prTableBody').innerHTML=prItems.map((item,idx)=>`<tr><td class="text-center">${idx+1}</td><td><input value="${item.name}" readonly class="form-control-plaintext ps-2"></td><td><input value="${item.partNumber}" readonly class="form-control-plaintext ps-2"></td><td><input type="number" class="form-control form-control-sm" value="${item.qty}" onchange="updatePRItem(${idx},'qty',this.value)"></td><td><input type="number" class="form-control form-control-sm" value="${item.price}" onchange="updatePRItem(${idx},'price',this.value)"></td><td class="text-center"><button onclick="removeFromPR(${idx})" class="btn btn-sm btn-outline-danger">×</button></td></tr>`).join('');
+}
+async function sendPR(){
+    if(prItems.length===0){dtvsAlert('Add at least one item before sending.',{title:'No Items',icon:'📋',btnClass:'dtvs-btn-primary'});return;}
+    // FIX #7 — validate quantities
+    const badItems = prItems.filter(i => !i.qty || parseFloat(i.qty) <= 0);
+    if(badItems.length){ dtvsAlert(`${badItems.length} item(s) have invalid quantity (must be > 0).`,{title:'Invalid Qty',icon:'⚠️',btnClass:'dtvs-btn-primary'}); return; }
+    const res=await fetch('/api/send-pr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:prItems})});
+    if(res.ok){manualPRCount++;await dtvsAlert('Your Purchase Request has been emailed successfully.',{title:'PR Sent!',icon:'✅',btnText:'Great',btnClass:'dtvs-btn-primary'});prItems=[];renderPRTable();}
+}
+
+// ════════════════════════════════════════════════════════════════
+//  SETTINGS
+// ════════════════════════════════════════════════════════════════
+async function clearSystemData(target){
+    const ok=await dtvsConfirm(`All ${target} records will be permanently deleted. This cannot be undone.`,{title:`Clear all ${target}?`,icon:'⚠️',confirmText:'Yes, Delete',confirmClass:'dtvs-btn-danger'});
+    if(!ok)return;
+    if((await fetch('/api/clear-data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target})})).ok){
+        await dtvsAlert('Data has been cleared successfully.',{title:'Done',icon:'✅',btnClass:'dtvs-btn-primary'}); await loadData();
+    }
+}
+async function saveSettings(){
+    await fetch('/api/save-settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:adminMailInput.value})});
+    await dtvsAlert('Email address saved successfully.',{title:'Saved',icon:'✅',btnClass:'dtvs-btn-primary'});
+}
+async function saveUser(){
+    const permissions={stock:document.getElementById('pStock').checked,update:document.getElementById('pUpdate').checked,bom:document.getElementById('pBOM').checked?document.getElementById('pBOMLevel').value:false,history:document.getElementById('pHistory').checked,pr:document.getElementById('pPR').checked};
+    await fetch('/api/create-user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:newU.value,password:newP.value,permissions})});
+    newU.value=''; newP.value=''; loadUsers();
+}
+async function loadUsers(){
+    const users=await(await fetch('/api/users')).json();
+    document.getElementById('userTable').innerHTML=users.map(u=>{
+        let ph=u.role==='superadmin'?'<span class="badge bg-dark">ALL ACCESS</span>':'';
+        if(u.permissions){const p=u.permissions;if(p.stock)ph+='<span class="badge bg-secondary me-1">Stock</span>';if(p.update)ph+='<span class="badge bg-primary me-1">Update</span>';if(p.bom)ph+=`<span class="badge bg-warning text-dark me-1">BOM:${p.bom}</span>`;if(p.history)ph+='<span class="badge bg-success me-1">History</span>';if(p.pr)ph+='<span class="badge bg-info text-dark me-1">PR</span>';}
+        const editBtn = u.role!=='superadmin' ? `<button class="btn btn-sm btn-outline-primary me-1" onclick="openEditPerms(${u.id},'${u.username}',${JSON.stringify(u.permissions||{}).replace(/'/g,'&#39;')})">✏️</button><button class="btn btn-sm btn-danger" onclick="delU(${u.id})">Delete</button>` : '';
+        return`<tr><td><strong>${u.username}</strong></td><td>${ph}</td><td class="text-end">${editBtn}</td></tr>`;
+    }).join('');
+}
+async function delU(id){await fetch('/api/delete-user',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});loadUsers();}
+
+// ════════════════════════════════════════════════════════════════
+//  EXPORT PDF
+// ════════════════════════════════════════════════════════════════
+function exportHistory(type){
+    const{jsPDF}=window.jspdf;const doc=new jsPDF();let data=[],headers=[],fileName='';
+    if(type==='restock'){const term=document.getElementById('rsSearch').value.toLowerCase();data=allData.restockHistory.filter(h=>h.name.toLowerCase().includes(term)).map(h=>[h.name,`+${h.qty}`,h.dateTime,h.performedBy||'Admin']);headers=[['Name','Qty','Date','By']];fileName='Restock_Report.pdf';doc.text('Restock History',14,15);}
+    else{const term=document.getElementById('wsSearch').value.toLowerCase();data=allData.withdrawalHistory.filter(h=>h.name.toLowerCase().includes(term)).map(h=>[h.name,`-${h.qty}`,h.giver,h.taker,h.comment,h.dateTime,h.performedBy||'Admin']);headers=[['Name','Qty','Giver','Taker','Comment','Date','By']];fileName='Withdrawal_Report.pdf';doc.text('Withdrawal History',14,15);}
+    doc.autoTable({head:headers,body:data,startY:20});doc.save(fileName);
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  BOM — XLS IMPORT
+//  Reads columns: Part#, Name, Supplier, Contact, Qty/M,
+//                 Critical Limit, Price, Rack  (header row auto-detected)
+// ════════════════════════════════════════════════════════════════
+async function importBomXls(inputEl) {
+    const file = inputEl.files[0];
+    inputEl.value = '';
+    if (!file) return;
+
+    const buf  = await file.arrayBuffer();
+    const wb   = XLSX.read(buf, { type: 'array' });
+    const ws   = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+    if (!rows.length) { dtvsAlert('The spreadsheet appears to be empty.', { title:'Nothing to import', icon:'📭' }); return; }
+
+    function norm(s) { return String(s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+    const COL_MAP = {
+        'partno':'partNumber','partnum':'partNumber','part':'partNumber','partnumber':'partNumber',
+        'name':'name','itemname':'name','description':'name','materialname':'name',
+        'supplier':'supplier','vendor':'supplier',
+        'contact':'supplierContact','suppliercontact':'supplierContact',
+        'qtymachine':'qtyPerMachine','qtym':'qtyPerMachine','qtypermachine':'qtyPerMachine','qty':'qtyPerMachine',
+        'criticallimit':'criticalLimit','limit':'criticalLimit','critical':'criticalLimit','minstock':'criticalLimit','reorderlevel':'criticalLimit',
+        'price':'price','unitprice':'price','cost':'price','unitcost':'price',
+        'rack':'rack','racklocation':'rack','location':'rack','bin':'rack','shelf':'rack',
+    };
+
+    const firstRowKeys = Object.keys(rows[0]);
+    const keyMap = {};
+    for (const k of firstRowKeys) { const field = COL_MAP[norm(k)]; if (field) keyMap[k] = field; }
+
+    if (!Object.values(keyMap).includes('name') && !Object.values(keyMap).includes('partNumber')) {
+        dtvsAlert('Could not find a "Name" or "Part #" column.<br><br>Detected: <b>' + firstRowKeys.join(', ') + '</b><br><br>Expected headers like: Part#, Name, Supplier, Contact, Qty/M, Critical Limit, Price, Rack',
+            { title:'Column headers not recognised', icon:'⚠️' }); return;
+    }
+
+    const items = rows.map(row => {
+        const item = {};
+        for (const [rawKey, field] of Object.entries(keyMap)) item[field] = String(row[rawKey] ?? '').trim();
+        return item;
+    }).filter(item => item.name || item.partNumber);
+
+    if (!items.length) { dtvsAlert('No valid rows found.', { title:'Nothing to import', icon:'📭' }); return; }
+
+    const ok = await dtvsConfirm(
+        `Found <b>${items.length}</b> item(s) to import.<br><br>Duplicate Part #s will be skipped.`,
+        { title:'Import BOM from XLS?', icon:'📥', confirmText:'Import', confirmClass:'dtvs-btn-primary', cancelText:'Cancel' }
+    );
+    if (!ok) return;
+
+    // FIX #2 — single bulk request instead of one per row
+    const res = await fetch('/api/bulk-add-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: items.map(item => ({
+            partNumber:      item.partNumber      || '',
+            name:            item.name            || '(unnamed)',
+            supplier:        item.supplier        || '',
+            supplierContact: item.supplierContact || '',
+            qtyPerMachine:   item.qtyPerMachine   || '',
+            criticalLimit:   parseInt(item.criticalLimit) || 0,
+            price:           parseFloat(item.price)       || '',
+            rack:            item.rack            || '',
+            quantity:        0,
+        }))})
+    });
+    const result = await res.json();
+    await loadData();
+    const lines = [`✅ <b>${result.added}</b> item(s) added`];
+    if (result.skipped) lines.push(`⏭ <b>${result.skipped}</b> skipped (duplicate Part #)`);
+    if (result.failed)  lines.push(`❌ <b>${result.failed}</b> failed`);
+    dtvsAlert(lines.join('<br>'), { title:'Import complete', icon:'📊', btnClass:'dtvs-btn-primary' });
+}
+
+
+// ════════════════════════════════════════════════════════════════
+//  FIX #10 — Proper logout (destroys server session)
+// ════════════════════════════════════════════════════════════════
+async function doLogout() {
+    await fetch('/api/logout', { method: 'POST' });
+    location.reload();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  FIX #11 — Warn before navigating away with unsaved PR items
+// ════════════════════════════════════════════════════════════════
+window.addEventListener('beforeunload', e => {
+    if (prItems && prItems.length > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
+
+// ════════════════════════════════════════════════════════════════
+//  FIX #3 — Change password
+// ════════════════════════════════════════════════════════════════
+async function changePassword() {
+    const cur  = document.getElementById('pwCurrent').value;
+    const nw   = document.getElementById('pwNew').value;
+    const conf = document.getElementById('pwConfirm').value;
+    if (!cur || !nw || !conf) { dtvsAlert('Please fill in all password fields.', { title:'Missing Fields', icon:'⚠️', btnClass:'dtvs-btn-primary' }); return; }
+    if (nw !== conf) { dtvsAlert('New passwords do not match.', { title:'Mismatch', icon:'⚠️', btnClass:'dtvs-btn-primary' }); return; }
+    if (nw.length < 6) { dtvsAlert('New password must be at least 6 characters.', { title:'Too Short', icon:'⚠️', btnClass:'dtvs-btn-primary' }); return; }
+    const res = await fetch('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ currentPassword: cur, newPassword: nw }) });
+    if (res.ok) {
+        document.getElementById('pwCurrent').value = '';
+        document.getElementById('pwNew').value = '';
+        document.getElementById('pwConfirm').value = '';
+        await dtvsAlert('Password updated successfully.', { title:'Done', icon:'✅', btnClass:'dtvs-btn-primary' });
+    } else {
+        const d = await res.json();
+        dtvsAlert(d.error || 'Failed to change password.', { title:'Error', icon:'❌', btnClass:'dtvs-btn-danger' });
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  FIX #6 — Export history to XLS
+// ════════════════════════════════════════════════════════════════
+function exportHistoryXls(type) {
+    let rows = [], fileName = '';
+    if (type === 'restock') {
+        const term = document.getElementById('rsSearch').value.toLowerCase();
+        rows = allData.restockHistory
+            .filter(h => h.name.toLowerCase().includes(term))
+            .map(h => ({ Name: h.name, Qty: '+' + h.qty, Date: h.dateTime, By: h.performedBy || 'Admin' }));
+        fileName = 'Restock_History.xlsx';
+    } else {
+        const term = document.getElementById('wsSearch').value.toLowerCase();
+        rows = allData.withdrawalHistory
+            .filter(h => h.name.toLowerCase().includes(term))
+            .map(h => ({ Name: h.name, Qty: '-' + h.qty, Giver: h.giver || '-', Taker: h.taker || '-', Comment: h.comment || '-', Date: h.dateTime, By: h.performedBy || 'Admin' }));
+        fileName = 'Withdrawal_History.xlsx';
+    }
+    if (!rows.length) { dtvsAlert('No records to export.', { title:'Nothing to Export', icon:'📭', btnClass:'dtvs-btn-primary' }); return; }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, type === 'restock' ? 'Restock' : 'Withdrawals');
+    XLSX.writeFile(wb, fileName);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  FIX #7 — Export BOM to XLS
+// ════════════════════════════════════════════════════════════════
+function exportBomXls() {
+    const rows = allData.stock.map(s => ({
+        'Part #':         s.partNumber || '',
+        'Name':           s.name       || '',
+        'Supplier':       s.supplier   || '',
+        'Contact':        s.supplierContact || '',
+        'Qty/Machine':    s.qtyPerMachine   || '',
+        'Critical Limit': s.criticalLimit   || 0,
+        'Price':          s.price != null && s.price !== '' ? s.price : '',
+        'Rack':           s.rack || '',
+        'Current Stock':  s.quantity || 0,
+    }));
+    if (!rows.length) { dtvsAlert('No items to export.', { title:'Nothing to Export', icon:'📭', btnClass:'dtvs-btn-primary' }); return; }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'BOM');
+    XLSX.writeFile(wb, 'BOM_Export.xlsx');
+}
+
+// Update importBomXls to use bulk endpoint (FIX #2)
+
+
+// ════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+//  FIX 3 — AUDIT LOG viewer (admin only, shown in Settings)
+// ════════════════════════════════════════════════════════════════
+async function loadAuditLog() {
+    const el = document.getElementById('auditLogBody');
+    if (!el) return;
+    try {
+        const res = await fetch('/api/audit-log');
+        if (!res.ok) return;
+        const log = await res.json();
+        if (!log.length) { el.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">No admin actions recorded yet.</td></tr>'; return; }
+        el.innerHTML = log.slice(0, 100).map(e => {
+            const ts = new Date(e.ts).toLocaleString();
+            const actionBadge = {
+                ADD_ITEM:'bg-success', EDIT_ITEM:'bg-primary', DELETE_ITEM:'bg-danger',
+                CREATE_USER:'bg-info text-dark', DELETE_USER:'bg-danger', EDIT_PERMISSIONS:'bg-warning text-dark',
+                SET_QUANTITY:'bg-secondary', SAVE_MAIL:'bg-secondary', DELETE_USER:'bg-danger'
+            }[e.action] || 'bg-secondary';
+            return `<tr>
+                <td><small class="text-muted">${ts}</small></td>
+                <td><span class="badge ${actionBadge}" style="font-size:0.7rem;">${e.action}</span></td>
+                <td><strong>${e.performedBy || '—'}</strong></td>
+                <td><small>${e.detail || ''}</small></td>
+            </tr>`;
+        }).join('');
+    } catch(e) { console.error('Audit log error:', e); }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  FIX 4 — ROLLING BACKUP (server-side only, nothing to add here)
+// ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+//  FIX 5 — SORTABLE STOCK LIST COLUMNS
+// ════════════════════════════════════════════════════════════════
+let stockSort = { col: 'name', dir: 1 };
+function sortStock(col) {
+    if (stockSort.col === col) stockSort.dir *= -1;
+    else { stockSort.col = col; stockSort.dir = 1; }
+    // Update indicators
+    document.querySelectorAll('[id^="sort-"]').forEach(el => el.textContent = '⇅');
+    const ind = document.getElementById('sort-' + col);
+    if (ind) ind.textContent = stockSort.dir === 1 ? '↑' : '↓';
+    renderTables();
+}
+function renderTables() {
+    // ── Stock List (with sort) ────────────────────────────────────
+    const fs=(document.getElementById('findStock').value||'').toLowerCase();
+    const sorted = allData.stock
+        .filter(s=>s.name.toLowerCase().includes(fs)||s.partNumber.toLowerCase().includes(fs)||(s.supplier||'').toLowerCase().includes(fs))
+        .slice()
+        .sort((a,b)=>{
+            let av = a[stockSort.col] ?? '', bv = b[stockSort.col] ?? '';
+            if (typeof av === 'number' || !isNaN(parseFloat(av))) { av=parseFloat(av)||0; bv=parseFloat(bv)||0; }
+            else { av=String(av).toLowerCase(); bv=String(bv).toLowerCase(); }
+            return av < bv ? -stockSort.dir : av > bv ? stockSort.dir : 0;
+        });
+    document.getElementById('stockTable').innerHTML=sorted.map(s=>`<tr>
+            <td>${s.partNumber||'—'}</td>
+            <td>${s.name}</td>
+            <td>${s.supplier||'-'}</td>
+            <td>${s.supplierContact||'-'}</td>
+            <td>${s.qtyPerMachine||'0'}</td>
+            <td><span class="badge bg-secondary bg-opacity-75 text-dark" style="font-size:0.78rem;font-weight:600;letter-spacing:0.5px;">${s.rack||'—'}</span></td>
+            <td>
+                <span class="badge ${s.quantity<=(s.criticalLimit||0)?'bg-danger':'bg-success'}">${s.quantity}</span>
+                <button onclick="showItemHistory(${s.id})" class="btn btn-link btn-sm p-0 ms-1" title="View transaction history" style="font-size:0.75rem;">📋</button>
+            </td>
+        </tr>`).join('');
+
+    // ── Stock Update ─────────────────────────────────────────────
+    const us=(document.getElementById('searchUpdate').value||'').toLowerCase();
+    const critOnly = document.getElementById('showCriticalOnly') && document.getElementById('showCriticalOnly').checked;
+    document.getElementById('updateTable').innerHTML=allData.stock
+        .filter(s=>{
+            const matchText = s.name.toLowerCase().includes(us)||s.partNumber.toLowerCase().includes(us)||(s.supplier||'').toLowerCase().includes(us);
+            const matchCrit = !critOnly || s.quantity <= (s.criticalLimit || 0);
+            return matchText && matchCrit;
+        })
+        .map(s=>`<tr>
+            <td>${s.partNumber||'—'}</td>
+            <td>${s.name}</td>
+            <td>
+                <small><b>Supp:</b> ${s.supplier||'-'}</small><br>
+                <small><b>Cont:</b> ${s.supplierContact||'-'}</small><br>
+                <small><b>Qty/M:</b> ${s.qtyPerMachine||'0'}</small>
+            </td>
+            <td><b>${s.quantity}</b> <small class="text-muted">(Lim: ${s.criticalLimit||0})</small></td>
+            <td class="text-center">
+                <input class="rack-input" value="${(s.rack||'').replace(/"/g,'&quot;')}" placeholder="—" title="Rack location — click to edit"
+                    onblur="saveRack(${s.id}, this)" onkeydown="if(event.key==='Enter'){this.blur();}">
+            </td>
+            <td>
+                <button onclick="doUp(${s.id},'receive')"  class="btn btn-sm btn-success me-1">+ Restock</button>
+                <button onclick="doUp(${s.id},'withdraw')" class="btn btn-sm btn-danger me-1">− Withdraw</button>
+                <button onclick="doSetQty(${s.id})" class="btn btn-sm btn-outline-secondary" title="Set exact quantity">⚙ Set</button>
+            </td>
+        </tr>`).join('');
+
+    // ── BOM ──────────────────────────────────────────────────────
+    const isFull=currentUser.role==='superadmin'||(currentUser.permissions&&currentUser.permissions.bom==='full');
+    const bs=(document.getElementById('searchBOM').value||'').toLowerCase();
+    document.getElementById('bomTable').innerHTML=allData.stock
+        .filter(s=>s.name.toLowerCase().includes(bs)||s.partNumber.toLowerCase().includes(bs)||(s.supplier||'').toLowerCase().includes(bs))
+        .map(s=>`<tr>
+            <td>${s.partNumber||'—'}</td>
+            <td>${s.name}</td>
+            <td>
+                <small><b>Supp:</b> ${s.supplier||'-'}</small><br>
+                <small><b>Cont:</b> ${s.supplierContact||'-'}</small><br>
+                <small><b>Qty/M:</b> ${s.qtyPerMachine||'0'}</small>
+            </td>
+            <td><b>${s.quantity}</b> <small class="text-muted">(Lim: ${s.criticalLimit||0})</small></td>
+            <td>${s.price!=null&&s.price!==''?'₹'+s.price:'-'}</td>
+            <td class="text-center">
+                <input class="rack-input" value="${(s.rack||'').replace(/"/g,'&quot;')}" placeholder="—" title="Rack location — click to edit"
+                    onblur="saveRack(${s.id}, this)" onkeydown="if(event.key==='Enter'){this.blur();}">
+            </td>
+            <td>${isFull
+                ? '<button onclick="openEdit('+s.id+')" class="btn btn-sm btn-outline-primary me-1">Edit</button><button onclick="deleteItem('+s.id+')" class="btn btn-sm btn-outline-danger">Delete</button>'
+                : '<span class="text-muted">—</span>'
+            }</td>
+        </tr>`).join('');
+
+    // ── Restock Log ───────────────────────────────────────────────
+    const rs=(document.getElementById('rsSearch').value||'').toLowerCase();
+    document.getElementById('restockLog').innerHTML=allData.restockHistory.slice().reverse()
+        .filter(h=>h.name.toLowerCase().includes(rs))
+        .map(h=>`<tr><td>${h.name}</td><td class="text-success">+${h.qty}</td><td><small>${h.dateTime}</small></td><td><span class="badge bg-info text-dark">${h.performedBy||'Admin'}</span></td></tr>`).join('');
+
+    // ── Withdrawal Log ────────────────────────────────────────────
+    const ws=(document.getElementById('wsSearch').value||'').toLowerCase();
+    document.getElementById('withdrawalLog').innerHTML=allData.withdrawalHistory.slice().reverse()
+        .filter(h=>h.name.toLowerCase().includes(ws))
+        .map(h=>`<tr><td>${h.name}</td><td class="text-danger">-${h.qty}</td><td>${h.giver||'-'}</td><td>${h.taker||'-'}</td><td><small>${h.comment||'-'}</small></td><td><small>${h.dateTime}</small></td><td><span class="badge bg-info text-dark">${h.performedBy||'Admin'}</span></td></tr>`).join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+//  FIX 6 — PER-ITEM TRANSACTION HISTORY POPUP
+// ════════════════════════════════════════════════════════════════
+function showItemHistory(id) {
+    const item = allData.stock.find(s => s.id == id);
+    if (!item) return;
+    const rs = allData.restockHistory.filter(h => h.name === item.name).slice().reverse().slice(0, 10);
+    const wd = allData.withdrawalHistory.filter(h => h.name === item.name).slice().reverse().slice(0, 10);
+    const rsRows = rs.length ? rs.map(h=>`<tr><td class="text-success">+${h.qty}</td><td><small>${h.dateTime}</small></td><td>${h.performedBy||'Admin'}</td></tr>`).join('') : '<tr><td colspan="3" class="text-muted text-center">No restocks</td></tr>';
+    const wdRows = wd.length ? wd.map(h=>`<tr><td class="text-danger">-${h.qty}</td><td><small>${h.dateTime}</small></td><td>${h.performedBy||'Admin'}</td></tr>`).join('') : '<tr><td colspan="3" class="text-muted text-center">No withdrawals</td></tr>';
+    _showDialog(`
+        <div class="dtvs-dialog-icon">📋</div>
+        <div class="dtvs-dialog-title">${item.name}</div>
+        <div class="dtvs-dialog-msg" style="margin-bottom:10px;">Part: ${item.partNumber||'—'} · Current stock: <b>${item.quantity}</b></div>
+        <div style="max-height:320px;overflow-y:auto;">
+            <div style="font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:4px;">Recent Restocks</div>
+            <table class="table table-sm mb-3"><thead><tr><th>Qty</th><th>Date</th><th>By</th></tr></thead><tbody>${rsRows}</tbody></table>
+            <div style="font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:4px;">Recent Withdrawals</div>
+            <table class="table table-sm"><thead><tr><th>Qty</th><th>Date</th><th>By</th></tr></thead><tbody>${wdRows}</tbody></table>
+        </div>
+        <div class="dtvs-dialog-actions"><button class="dtvs-btn dtvs-btn-primary" id="_dtvsOk">Close</button></div>
+    `, (overlay, resolve) => { overlay.querySelector('#_dtvsOk').onclick = () => { overlay.remove(); resolve(true); }; });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  FIX 7 — PR QUANTITY VALIDATION (already patched in sendPR above)
+// ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+//  FIX 8 — NO-DATA CHART PLACEHOLDER (already in buildChart above)
+// ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+//  FIX 9 — EDIT USER PERMISSIONS DIALOG
+// ════════════════════════════════════════════════════════════════
+async function openEditPerms(id, username, permsJson) {
+    const p = (typeof permsJson === 'string') ? JSON.parse(permsJson) : (permsJson || {});
+    const chk = (key, label, extra='') => `
+        <div class="form-check mb-1">
+            <input class="form-check-input" type="checkbox" id="ep_${key}" ${p[key]?'checked':''}>
+            <label class="form-check-label small" for="ep_${key}">${label}</label>${extra}
+        </div>`;
+    const bomSel = `<select id="ep_bomLevel" class="form-select form-select-sm d-inline-block ms-2" style="width:auto;">
+        <option value="full" ${p.bom==='full'?'selected':''}>Full</option>
+        <option value="view" ${p.bom==='view'?'selected':''}>View</option>
+    </select>`;
+    await _showDialog(`
+        <div class="dtvs-dialog-icon">✏️</div>
+        <div class="dtvs-dialog-title">Edit: ${username}</div>
+        <div style="margin-bottom:12px;">
+            ${chk('stock','📦 Stock List')}
+            ${chk('update','🔄 Stock Update')}
+            <div class="form-check mb-1">
+                <input class="form-check-input" type="checkbox" id="ep_bom" ${p.bom?'checked':''}>
+                <label class="form-check-label small" for="ep_bom">📋 BOM</label>${bomSel}
+            </div>
+            ${chk('history','📜 History Logs')}
+            ${chk('pr','📝 PR Creator')}
+        </div>
+        <div class="dtvs-dialog-actions">
+            <button class="dtvs-btn dtvs-btn-ghost" id="_dtvsCancel">Cancel</button>
+            <button class="dtvs-btn dtvs-btn-primary" id="_dtvsSave">Save</button>
+        </div>
+    `, async (overlay, resolve) => {
+        overlay.querySelector('#_dtvsCancel').onclick = () => { overlay.remove(); resolve(false); };
+        overlay.querySelector('#_dtvsSave').onclick = async () => {
+            const newPerms = {
+                stock:   overlay.querySelector('#ep_stock').checked,
+                update:  overlay.querySelector('#ep_update').checked,
+                bom:     overlay.querySelector('#ep_bom').checked ? overlay.querySelector('#ep_bomLevel').value : false,
+                history: overlay.querySelector('#ep_history').checked,
+                pr:      overlay.querySelector('#ep_pr').checked,
+            };
+            const res = await fetch('/api/update-permissions', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ id, permissions: newPerms })
+            });
+            overlay.remove();
+            if (res.ok) { showToast('Permissions updated ✓'); loadUsers(); }
+            else { dtvsAlert('Failed to update permissions.', { title:'Error', icon:'❌', btnClass:'dtvs-btn-danger' }); }
+            resolve(true);
+        };
+    });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  FIX 10 — SET EXACT STOCK QUANTITY
+// ════════════════════════════════════════════════════════════════
+async function doSetQty(id) {
+    const item = allData.stock.find(s => s.id == id);
+    if (!item) return;
+    await _showDialog(`
+        <div class="dtvs-dialog-icon">⚙️</div>
+        <div class="dtvs-dialog-title">Set Exact Quantity</div>
+        <div class="dtvs-dialog-msg" style="margin-bottom:12px;">${item.name}<br><small>Current stock: <b>${item.quantity}</b></small></div>
+        <label>New Quantity</label>
+        <input id="_sqQty" type="number" min="0" placeholder="Enter exact quantity" value="${item.quantity}">
+        <label>Reason (optional)</label>
+        <input id="_sqReason" type="text" placeholder="e.g. Physical count, correction...">
+        <div class="dtvs-dialog-actions">
+            <button class="dtvs-btn dtvs-btn-ghost" id="_dtvsCancel">Cancel</button>
+            <button class="dtvs-btn dtvs-btn-primary" id="_dtvsOk">Set Quantity</button>
+        </div>
+    `, async (overlay, resolve) => {
+        const qtyEl = overlay.querySelector('#_sqQty');
+        qtyEl.focus(); qtyEl.select();
+        overlay.querySelector('#_dtvsCancel').onclick = () => { overlay.remove(); resolve(null); };
+        overlay.querySelector('#_dtvsOk').onclick = async () => {
+            const qty = qtyEl.value.trim();
+            if (qty === '' || isNaN(qty) || parseInt(qty) < 0) { qtyEl.style.borderColor='var(--danger)'; qtyEl.focus(); return; }
+            const reason = overlay.querySelector('#_sqReason').value.trim();
+            overlay.remove();
+            const res = await fetch('/api/set-quantity', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ id, quantity: parseInt(qty), reason })
+            });
+            if (res.ok) { await loadData(); showToast(`Stock set to ${qty} ✓`); }
+            else { const d = await res.json().catch(()=>({})); dtvsAlert(d.error||'Failed to set quantity.', {title:'Error',icon:'❌',btnClass:'dtvs-btn-danger'}); }
+            resolve(true);
+        };
+        qtyEl.addEventListener('keydown', e => { if(e.key==='Enter') overlay.querySelector('#_dtvsOk').click(); });
+    });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  FIX 11 — DOCUMENT CATEGORY FILTER + UPLOAD TAG
+// ════════════════════════════════════════════════════════════════
+// Patch renderDocuments to support category filter
+function renderDocuments() {
+    const search     = (document.getElementById('docSearch').value || '').toLowerCase();
+    const typeFilter = document.getElementById('docTypeFilter') ? document.getElementById('docTypeFilter').value : '';
+    const catFilter  = document.getElementById('docCategoryFilter') ? document.getElementById('docCategoryFilter').value : '';
+    const isAdmin    = currentUser.role === 'superadmin';
+    let docs = allDocuments.filter(doc => {
+        const matchSearch = doc.originalName.toLowerCase().includes(search) || (doc.uploadedBy||'').toLowerCase().includes(search);
+        const matchType   = !typeFilter || getFileType(doc.originalName).type === typeFilter;
+        const matchCat    = !catFilter  || (doc.category || '') === catFilter;
+        return matchSearch && matchType && matchCat;
+    });
+    docs = docs.slice().sort((a,b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+    document.getElementById('docCountBadge').textContent = allDocuments.length === 1 ? '1 file' : `${allDocuments.length} files`;
+    const grid  = document.getElementById('docGrid');
+    const empty = document.getElementById('docEmpty');
+    const sub   = document.getElementById('docEmptySub');
+    if (docs.length === 0) {
+        grid.innerHTML = '';
+        empty.classList.remove('hidden');
+        sub.textContent = search||typeFilter||catFilter ? 'No documents match your filters.' : (isAdmin ? 'Upload files using the drop zone above.' : 'No documents have been uploaded yet.');
+        return;
+    }
+    empty.classList.add('hidden');
+    grid.innerHTML = docs.map(doc => {
+        const ft = getFileType(doc.originalName);
+        const catBadge = doc.category ? `<span class="badge bg-secondary bg-opacity-50 text-dark" style="font-size:0.68rem;">${doc.category}</span>` : '';
+        return `<div class="doc-card">
+            <div class="doc-type-stripe" style="background:${ft.color};"></div>
+            <div class="doc-card-icon">${ft.icon}</div>
+            <div class="doc-card-name" title="${doc.originalName}">${doc.originalName}</div>
+            ${catBadge ? '<div class="doc-meta">'+catBadge+'</div>' : ''}
+            <div class="doc-meta">${ft.label} · ${formatBytes(doc.size)}</div>
+            <div class="doc-meta">📅 ${formatDocDate(doc.uploadedAt)}</div>
+            <div class="doc-meta">👤 ${doc.uploadedBy||'Admin'}</div>
+            <div class="doc-card-actions">
+                <button class="doc-btn doc-btn-view" onclick="viewDocument('${doc.id}','${encodeURIComponent(doc.originalName)}','${doc.mimeType}')">
+                    ${doc.mimeType==='application/pdf'||doc.mimeType.startsWith('image/')?'👁 View':'⬇ Download'}
+                </button>
+                ${isAdmin ? `<button class="doc-btn doc-btn-delete" onclick="deleteDocument(${doc.id}, this.dataset.name)" data-name="${doc.originalName.replace(/"/g,'&quot;')}">🗑 Delete</button>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+// Patch uploadFiles to send category
+async function uploadFiles(fileList) {
+    if (!fileList || fileList.length === 0) return;
+    const progress = document.getElementById('docUploadProgress');
+    const statusEl = document.getElementById('docUploadStatus');
+    const pctEl    = document.getElementById('docUploadPct');
+    const barEl    = document.getElementById('docProgressBar');
+    const category = document.getElementById('docUploadCategory') ? document.getElementById('docUploadCategory').value : '';
+    progress.classList.add('show');
+    statusEl.textContent = `Uploading ${fileList.length} file${fileList.length>1?'s':''}...`;
+    barEl.style.width = '0%'; pctEl.textContent = '0%';
+    const formData = new FormData();
+    for (const f of fileList) formData.append('files', f);
+    if (category) formData.append('category', category);
+    await new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/documents/upload');
+        xhr.upload.onprogress = e => { if(e.lengthComputable){const pct=Math.round((e.loaded/e.total)*100);barEl.style.width=pct+'%';pctEl.textContent=pct+'%';} };
+        xhr.onload = async () => {
+            barEl.style.width='100%'; pctEl.textContent='100%';
+            if (xhr.status===200) {
+                const result=JSON.parse(xhr.responseText);
+                statusEl.textContent=`✅ ${result.saved.length} file${result.saved.length!==1?'s':''} uploaded successfully`;
+                if(result.errors&&result.errors.length){statusEl.textContent+=` · ⚠️ ${result.errors.length} skipped`;await dtvsAlert(result.errors.join('<br>'),{title:'Some files were skipped',icon:'⚠️',btnClass:'dtvs-btn-primary'});}
+                await loadDocuments();
+            } else { statusEl.textContent='❌ Upload failed. Please try again.'; }
+            setTimeout(()=>{progress.classList.remove('show');},3000);
+            document.getElementById('docFileInput').value='';
+            resolve();
+        };
+        xhr.onerror=()=>{statusEl.textContent='❌ Network error.';setTimeout(()=>progress.classList.remove('show'),3000);resolve();};
+        xhr.send(formData);
+    });
+}
+
+// ════════════════════════════════════════════════════════════════
+//  FIX 12 — MAIL CREDENTIALS UI
+// ════════════════════════════════════════════════════════════════
+async function saveMailCreds() {
+    const mailUser = document.getElementById('mailUser').value.trim();
+    const mailPass = document.getElementById('mailPass').value;
+    if (!mailUser) { dtvsAlert('Please enter a Gmail address.', {title:'Required',icon:'⚠️',btnClass:'dtvs-btn-primary'}); return; }
+    const res = await fetch('/api/save-mail-settings', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ mailUser, mailPass })
+    });
+    if (res.ok) {
+        document.getElementById('mailPass').value = '';
+        await dtvsAlert('Mail settings saved successfully.', {title:'Saved ✓',icon:'✅',btnClass:'dtvs-btn-primary'});
+    } else {
+        const d = await res.json().catch(()=>({}));
+        dtvsAlert(d.error||'Failed to save mail settings.', {title:'Error',icon:'❌',btnClass:'dtvs-btn-danger'});
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+//  FIX 14 — FOCUS PART# AFTER ADDNEW (already patched in addNew above)
+// ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+//  PATCH: showTab to load audit log when opening Settings
+// ════════════════════════════════════════════════════════════════
+function showTab(name) {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
+    document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active-tab'));
+    document.getElementById('tab' + name).classList.remove('hidden');
+    document.getElementById('btn' + name).classList.add('active-tab');
+    if (name === 'Settings')  { loadUsers(); if(currentUser&&currentUser.role==='superadmin') loadAuditLog(); }
+    if (name === 'Dashboard') { initDashFilter(); renderDashboard(); }
+    if (name === 'Documents') loadDocuments();
+}
+
+const style=document.createElement('style');
+style.textContent=`@keyframes fadeInUp{from{opacity:0;transform:translateX(-50%) translateY(10px);}to{opacity:1;transform:translateX(-50%) translateY(0);}}`;
+document.head.appendChild(style);
+</script>
+</body>
+</html>
