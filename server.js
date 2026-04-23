@@ -137,13 +137,6 @@ function loadOrCreateKey() {
 
     return { dataKey: Buffer.from(dataKey, 'hex'), sessionSecret };
 }
-    }
-    if (!sessionSecret || sessionSecret.length < 64) {
-        throw new Error('SESSION_SECRET must be ≥64 characters and set as an environment variable.');
-    }
-
-    return { dataKey: Buffer.from(dataKey, 'hex'), sessionSecret };
-}
 
 const { dataKey: SECRET_KEY, sessionSecret: SESSION_SECRET } = loadOrCreateKey();
 
