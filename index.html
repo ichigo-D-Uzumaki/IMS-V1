@@ -222,6 +222,14 @@
 </head>
 <body class="bg-light theme-blue">
 
+<script>
+    // API Configuration
+    window.API_BASE = window.location.hostname === 'localhost' ? '' : 'https://your-backend-render-url.onrender.com';
+
+    // API helper
+    window.apiFetch = (url, options) => fetch(window.API_BASE + url, { ...options, credentials: 'include' });
+</script>
+
 <!-- ══ LOGIN ═════════════════════════════════════════════════════════════════ -->
 <div id="loginSection" class="container mt-5" style="max-width:400px;">
     <div class="card p-4 shadow text-center border-0">
@@ -854,7 +862,7 @@ async function login() {
 
     let res;
     try {
-        res = await fetch('/api/login', {
+        res = await apiFetch('/api/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password, rememberMe })
@@ -1402,7 +1410,7 @@ async function importBomXls(inputEl) {
 //  FIX #10 — Proper logout (destroys server session)
 // ════════════════════════════════════════════════════════════════
 async function doLogout() {
-    await fetch('/api/logout', { method: 'POST' });
+    await apiFetch('/api/logout', { method: 'POST' });
     location.reload();
 }
 

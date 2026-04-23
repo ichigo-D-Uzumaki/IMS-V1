@@ -1,21 +1,21 @@
 services:
   - type: web
-    name: ims-v1
+    name: ims-v1-backend
     env: node
     buildCommand: npm install
     startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
-      - key: MONGODB_URI
+      - key: MONGO_URI
         sync: false          # Set manually in Render dashboard
       - key: DTVS_SECRET
         sync: false          # Set manually in Render dashboard (64 hex chars)
       - key: SESSION_SECRET
         sync: false          # Set manually in Render dashboard (>=64 chars)
-      - key: MAIL_USER
+      - key: EMAIL_USER
         sync: false          # Optional — Gmail address for notifications
-      - key: MAIL_PASS
+      - key: EMAIL_PASS
         sync: false          # Optional — Gmail App Password
       - key: CLOUDINARY_CLOUD_NAME
         sync: false          # Optional — for file uploads
@@ -23,3 +23,5 @@ services:
         sync: false          # Optional — for file uploads
       - key: CLOUDINARY_API_SECRET
         sync: false          # Optional — for file uploads
+      - key: FRONTEND_URL
+        value: https://your-frontend-vercel-url.vercel.app

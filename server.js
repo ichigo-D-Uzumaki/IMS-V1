@@ -5,13 +5,45 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const session = require('express-session');
+const MongoStore = require('connect-mongo');
 const nodemailer = require('nodemailer');
+const helmet = require('helmet');
+const compression = require('compression');
+const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const { connectDB, getAppData, saveAppData } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const IS_PROD = process.env.NODE_ENV === 'production';
-const USE_MONGO = !!process.env.MONGODB_URI;
+const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
+
+// ── Security & Performance Middlewares ──────────────────────────────────────────
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            scriptSrc: ["'self'", "https://cdnjs.cloudflare.com", "https://cdn.sheetjs.com", "https://cdn.jsdelivr.net"],
+            imgSrc: ["'self'", "data:", "https:", "http:"],
+            connectSrc: ["'self'", "https:"],
+        },
+    },
+}));
+app.use(compression());
+app.use(cors({
+    origin: IS_PROD ? process.env.FRONTEND_URL || 'https://your-frontend-domain.vercel.app' : 'http://localhost:3000',
+    credentials: true,
+}));
+
+// Global rate limiting
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+    message: 'Too many requests from this IP, please try again later.',
+});
+app.use(limiter);
 
 // Local-only paths (ignored in production with Mongo)
 const DATA_FILE = 'data.json';
@@ -37,7 +69,7 @@ if (USE_CLOUDINARY) {
 }
 
 // Ensure local directories exist (skipped when running fully on cloud)
-if (!IS_PROD || !USE_MONGO) {
+if (!IS_PROD || !MONGO_URI) {
     if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
     if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 }
@@ -51,8 +83,8 @@ const ALGO = 'aes-256-gcm';
 const IV_LEN = 12; // 96-bit IV recommended for GCM
 
 function loadOrCreateKey() {
-    let dataKey = process.env.DTVS_SECRET || null;
-    let sessionSecret = process.env.SESSION_SECRET || null;
+    let dataKey = process.env.DTVS_SECRET;
+    let sessionSecret = process.env.SESSION_SECRET;
 
     if (!IS_PROD) {
         // Local dev: read from .env file and auto-generate if missing
@@ -98,6 +130,13 @@ function loadOrCreateKey() {
     // Both local and production: validate secrets before starting
     if (!dataKey || dataKey.length !== 64) {
         throw new Error('DTVS_SECRET must be a 64-character hex string set as an environment variable.');
+    }
+    if (!sessionSecret || sessionSecret.length < 64) {
+        throw new Error('SESSION_SECRET must be ≥64 characters and set as an environment variable.');
+    }
+
+    return { dataKey: Buffer.from(dataKey, 'hex'), sessionSecret };
+}
     }
     if (!sessionSecret || sessionSecret.length < 64) {
         throw new Error('SESSION_SECRET must be ≥64 characters and set as an environment variable.');
@@ -171,7 +210,7 @@ function verifyPassword(password, stored) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  DATA LAYER  (async — MongoDB when MONGODB_URI is set, else local data.json)
+//  DATA LAYER  (async — MongoDB when MONGO_URI is set, else local data.json)
 // ─────────────────────────────────────────────────────────────────────────────
 const EMPTY_DB = () => ({
     users: [], stock: [], restockHistory: [], withdrawalHistory: [],
@@ -190,7 +229,7 @@ async function getData() {
     if (_dbCache) return _dbCache; // serve from cache
 
     let raw;
-    if (USE_MONGO) {
+    if (MONGO_URI) {
         raw = await getAppData();
     } else {
         if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify(EMPTY_DB(), null, 2));
@@ -217,7 +256,7 @@ async function saveData(data) {
         withdrawalHistory:  (data.withdrawalHistory  || []).map(encryptHistory),
     };
 
-    if (USE_MONGO) {
+    if (MONGO_URI) {
         await saveAppData(toWrite);
     } else {
         // Rolling backup — keep last 5 versions (local dev only)
@@ -248,6 +287,11 @@ app.use((req, res, next) => {
 app.use(express.static(__dirname));
 app.use(session({
     secret: SESSION_SECRET,
+    store: MONGO_URI ? MongoStore.create({
+        mongoUrl: MONGO_URI,
+        collectionName: 'sessions',
+        ttl: 24 * 60 * 60, // 1 day
+    }) : undefined, // memory store for local dev
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -306,8 +350,8 @@ function safeFloat(val, fallback = '') {
 // ─────────────────────────────────────────────────────────────────────────────
 async function getMailCredentials() {
     // 1. Environment variables (cloud dashboard or local .env via dotenv)
-    if (process.env.MAIL_USER && process.env.MAIL_PASS) {
-        return { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS };
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        return { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS };
     }
     // 2. DB mailSettings (saved via admin UI — works on both Mongo and local)
     try {
@@ -320,9 +364,9 @@ async function getMailCredentials() {
         const envLines = fs.readFileSync(ENV_FILE, 'utf8').split('\n');
         const get = key => {
             const l = envLines.find(line => line.startsWith(key + '='));
-            return l ? l.split('=').slice(1).join('=').trim() : '';
+            return l ? l.split('='').slice(1).join('=').trim() : '';
         };
-        return { user: get('MAIL_USER'), pass: get('MAIL_PASS') };
+        return { user: get('EMAIL_USER'), pass: get('EMAIL_PASS') };
     }
     return { user: '', pass: '' };
 }
@@ -749,7 +793,7 @@ app.post('/api/save-mail-settings', requireAdmin, async (req, res) => {
 
     const data = await getData();
 
-    if (USE_MONGO) {
+    if (MONGO_URI) {
         // Cloud: persist mail credentials in the database
         if (!data.mailSettings) data.mailSettings = {};
         data.mailSettings.mailUser = mailUser;
@@ -761,9 +805,9 @@ app.post('/api/save-mail-settings', requireAdmin, async (req, res) => {
         try {
             const envLines = fs.existsSync(ENV_FILE)
                 ? fs.readFileSync(ENV_FILE, 'utf8').split('\n').filter(l => l.trim()) : [];
-            const kept = envLines.filter(l => !l.startsWith('MAIL_USER=') && !l.startsWith('MAIL_PASS='));
-            kept.push(`MAIL_USER=${mailUser}`);
-            if (mailPass) kept.push(`MAIL_PASS=${mailPass}`);
+            const kept = envLines.filter(l => !l.startsWith('EMAIL_USER=') && !l.startsWith('EMAIL_PASS='));
+            kept.push(`EMAIL_USER=${mailUser}`);
+            if (mailPass) kept.push(`EMAIL_PASS=${mailPass}`);
             fs.writeFileSync(ENV_FILE, kept.join('\n') + '\n');
         } catch (e) {
             return res.status(500).json({ error: 'Could not save mail settings: ' + e.message });
@@ -1047,10 +1091,18 @@ app.delete('/api/documents/:id', requireAuth, requireAdmin, async (req, res) => 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  ERROR HANDLING MIDDLEWARE
+// ─────────────────────────────────────────────────────────────────────────────
+app.use((err, req, res, next) => {
+    console.error('Error:', err);
+    res.status(500).json({ error: IS_PROD ? 'Internal server error' : err.message });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  START SERVER
 // ─────────────────────────────────────────────────────────────────────────────
 async function start() {
-    if (USE_MONGO) {
+    if (MONGO_URI) {
         await connectDB();
     }
     app.listen(PORT, () => console.log(`✅ Server running at http://localhost:${PORT}`));

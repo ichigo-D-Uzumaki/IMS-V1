@@ -21,15 +21,47 @@ const appDataSchema = new mongoose.Schema(
 const AppData = mongoose.model('AppData', appDataSchema);
 
 // ── Connection ─────────────────────────────────────────────────────────────────
-async function connectDB() {
-    const uri = process.env.MONGODB_URI;
-    if (!uri) throw new Error('MONGODB_URI environment variable is not set.');
+let isConnected = false;
 
-    await mongoose.connect(uri, {
-        serverSelectionTimeoutMS: 10000,
-    });
-    console.log('✅ Connected to MongoDB');
+async function connectDB() {
+    if (isConnected) return;
+
+    const uri = process.env.MONGO_URI || process.env.MONGODB_URI;
+    if (!uri) {
+        throw new Error('MONGO_URI or MONGODB_URI environment variable is required for production.');
+    }
+
+    try {
+        await mongoose.connect(uri, {
+            serverSelectionTimeoutMS: 10000,
+            socketTimeoutMS: 45000,
+            maxPoolSize: 10,
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 45000,
+        });
+        isConnected = true;
+        console.log('✅ Connected to MongoDB Atlas');
+    } catch (error) {
+        console.error('❌ MongoDB connection error:', error.message);
+        throw error;
+    }
 }
+
+// Handle connection events
+mongoose.connection.on('error', (err) => {
+    console.error('MongoDB connection error:', err);
+    isConnected = false;
+});
+
+mongoose.connection.on('disconnected', () => {
+    console.log('MongoDB disconnected');
+    isConnected = false;
+});
+
+mongoose.connection.on('reconnected', () => {
+    console.log('MongoDB reconnected');
+    isConnected = true;
+});
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const EMPTY_DB = () => ({
@@ -45,17 +77,29 @@ const EMPTY_DB = () => ({
 });
 
 async function getAppData() {
-    let doc = await AppData.findById('singleton').lean();
-    if (!doc) {
-        doc = EMPTY_DB();
-        await AppData.create(doc);
+    try {
+        await connectDB();
+        let doc = await AppData.findById('singleton').lean();
+        if (!doc) {
+            doc = EMPTY_DB();
+            await AppData.create(doc);
+        }
+        return doc;
+    } catch (error) {
+        console.error('Error getting app data:', error);
+        throw error;
     }
-    return doc;
 }
 
 async function saveAppData(data) {
-    // Use replace-style upsert so all fields (including removals) are honoured
-    await AppData.replaceOne({ _id: 'singleton' }, data, { upsert: true });
+    try {
+        await connectDB();
+        // Use replace-style upsert so all fields (including removals) are honoured
+        await AppData.replaceOne({ _id: 'singleton' }, data, { upsert: true });
+    } catch (error) {
+        console.error('Error saving app data:', error);
+        throw error;
+    }
 }
 
 module.exports = { connectDB, getAppData, saveAppData };
