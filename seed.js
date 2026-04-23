@@ -1,9 +1,28 @@
-require('dotenv').config();
 const mongoose = require('mongoose');
 const fs = require('fs');
 
+function loadEnvFile(filePath) {
+    const result = {};
+    if (!fs.existsSync(filePath)) return result;
+    for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+        const [key, ...rest] = trimmed.split('=');
+        result[key.trim()] = rest.join('=').trim();
+    }
+    return result;
+}
+
+let env = process.env;
+try {
+    require('dotenv').config();
+    env = process.env;
+} catch (err) {
+    env = { ...process.env, ...loadEnvFile('.env') };
+}
+
 async function seed() {
-    const mongoUri = process.env.MONGO_URI;
+    const mongoUri = env.MONGO_URI || env.MONGODB_URI;
     if (!mongoUri) {
         console.error('MONGO_URI environment variable is required');
         process.exit(1);
