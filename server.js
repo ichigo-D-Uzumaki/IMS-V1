@@ -357,7 +357,7 @@ async function getMailCredentials() {
         const envLines = fs.readFileSync(ENV_FILE, 'utf8').split('\n');
         const get = key => {
             const l = envLines.find(line => line.startsWith(key + '='));
-            return l ? l.split('='').slice(1).join('=').trim() : '';
+            return l ? l.split('=').slice(1).join('=').trim() : '';
         };
         return { user: get('EMAIL_USER'), pass: get('EMAIL_PASS') };
     }
