@@ -22,14 +22,27 @@ try {
 }
 
 async function seed() {
-    const mongoUri = env.MONGO_URI || env.MONGODB_URI;
+    const mongoUri = (env.MONGO_URI || env.MONGODB_URI || '').trim();
     if (!mongoUri) {
         console.error('MONGO_URI environment variable is required');
         process.exit(1);
     }
+    if (!/^mongodb(\+srv)?:\/\//i.test(mongoUri)) {
+        console.error('MONGO_URI must be a valid MongoDB connection string.');
+        console.error('Current value:', mongoUri);
+        process.exit(1);
+    }
+
+    const safeUri = mongoUri.replace(/(mongodb(\+srv)?:\/\/[^:]+):[^@]+@/, '$1:*****@');
+    console.log('Connecting to MongoDB Atlas using:', safeUri);
+
+    const connectOptions = {};
+    if (!/^mongodb(\+srv)?:\/\/[^/]+\/.+/.test(mongoUri)) {
+        connectOptions.dbName = 'ims-v1';
+    }
 
     try {
-        await mongoose.connect(mongoUri);
+        await mongoose.connect(mongoUri, connectOptions);
         console.log('Connected to MongoDB Atlas');
 
         const data = JSON.parse(fs.readFileSync('data.json', 'utf8'));
